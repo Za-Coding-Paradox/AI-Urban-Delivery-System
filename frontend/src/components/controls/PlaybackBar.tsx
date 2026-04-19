@@ -58,22 +58,25 @@ export function PlaybackBar() {
 
   const { cursor, total, playing, speed } = playback;
 
-  // Auto-advance timer — still advances the flat cursor; GridView derives its
-  // own segment-local position from that, keeping everything in sync.
+  // Auto-advance timer — reads live cursor/total via getState() to avoid
+  // stale closure. The interval recreates only when playing/speed change.
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (!playing || total === 0) return;
 
     const delay = PLAYBACK_STEP_MS / speed;
     intervalRef.current = setInterval(() => {
-      store.stepForward();
-      if (cursor >= total - 1) {
+      const { playback: pb } = store.getState();
+      if (pb.cursor >= pb.total - 1) {
         store.setPlaybackPlaying(false);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      } else {
+        store.stepForward();
       }
     }, delay);
 
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [playing, speed, cursor, total]);
+  }, [playing, speed, total]);
 
   // Don't render when no events
   if (total === 0 && runStatus === "idle") return null;

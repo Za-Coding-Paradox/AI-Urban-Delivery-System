@@ -70,6 +70,12 @@ class BaseRunner(ABC):
         algo_id = config["id"]
         heuristic = get_heuristic(config["heuristic"])
 
+        # delivery_id is the logical label ("D1"…"D5") stored in goal["label"].
+        # It is used on every emitted event so the frontend can bucket events
+        # by (algorithm_id, delivery_id) for per-pair playback.
+        # Fall back to the cell id string if label is missing (should never happen).
+        delivery_id: str = goal.get("label") or goal.get("id", "")
+
         # Build a fast lookup dict: "x,y" → cell
         # O(1) access instead of scanning 225 cells every time
         cell_map = {cell["id"]: cell for cell in cells}
@@ -96,11 +102,14 @@ class BaseRunner(ABC):
         step = 0
         start_time = time.perf_counter()
 
-        # Emit algorithm_start event so the frontend knows we began
+        # Emit algorithm_start event so the frontend knows we began.
+        # delivery_id is included so the frontend store can route this event
+        # to the correct (algo, delivery) segment bucket.
         self._bus.publish(
             {
                 "event_type": "algorithm_start",
                 "algorithm_id": algo_id,
+                "delivery_id": delivery_id,
                 "start_id": start["id"],
                 "goal_id": goal["id"],
             }
@@ -126,6 +135,7 @@ class BaseRunner(ABC):
                 node=node,
                 status="closed",
                 algo_id=algo_id,
+                delivery_id=delivery_id,
                 step=step,
                 frontier_size=self._frontier_size(),
                 visited_count=len(visited),
@@ -144,6 +154,7 @@ class BaseRunner(ABC):
                         {
                             "event_type": "path_step",
                             "algorithm_id": algo_id,
+                            "delivery_id": delivery_id,
                             "node": {
                                 **path_cell,
                                 "status": "path",
@@ -160,6 +171,7 @@ class BaseRunner(ABC):
                     {
                         "event_type": "delivery_complete",
                         "algorithm_id": algo_id,
+                        "delivery_id": delivery_id,
                         "goal_id": goal["id"],
                         "step": step,
                     }
@@ -216,6 +228,7 @@ class BaseRunner(ABC):
                     node=neighbour_node,
                     status="open",
                     algo_id=algo_id,
+                    delivery_id=delivery_id,
                     step=step,
                     frontier_size=self._frontier_size(),
                     visited_count=len(visited),
@@ -236,6 +249,7 @@ class BaseRunner(ABC):
             {
                 "event_type": "path_found",
                 "algorithm_id": algo_id,
+                "delivery_id": delivery_id,
                 "path_found": False,
                 "goal_id": goal["id"],
             }
@@ -376,12 +390,15 @@ class BaseRunner(ABC):
         step: int,
         frontier_size: int,
         visited_count: int,
+        delivery_id: str = "",
         edge: dict | None = None,
     ) -> None:
         """
         Constructs and publishes one TraceEvent.
         Strips internal fields (_parent) before emitting
         so the event matches the schema exactly.
+        delivery_id is included so the frontend can bucket events
+        by (algorithm_id, delivery_id) for per-pair playback.
         """
         import time
 
@@ -391,6 +408,7 @@ class BaseRunner(ABC):
                 "step": step,
                 "timestamp_ms": time.perf_counter() * 1000,
                 "algorithm_id": algo_id,
+                "delivery_id": delivery_id,
                 "node": {
                     "id": node["id"],
                     "x": node["x"],

@@ -210,10 +210,13 @@ export const useStore = create<SimStore>((set, get) => ({
     const type = event.event_type;
 
     // Always append to the flat event buffer for playback
-    set((s) => ({
-      events: [...s.events, event],
-      playback: { ...s.playback, total: s.events.length + 1 },
-    }));
+    set((s) => {
+      const newEvents = [...s.events, event];
+      return {
+        events: newEvents,
+        playback: { ...s.playback, total: newEvents.length },
+      };
+    });
 
     // ── segment bucketing ────────────────────────────────────────────────
     // Any event carrying both algorithm_id and delivery_id gets appended
