@@ -17,12 +17,12 @@ from typing import Callable
 
 from backend.engine.event_bus import EventBus
 
-
 # ── custom exception ───────────────────────────────────────────────────────────
 
 
 class TraceBuilderError(Exception):
     """Raised when the builder is used incorrectly or receives bad data."""
+
     pass
 
 
@@ -77,8 +77,8 @@ class StackTraceBuilder:
 
     def __init__(self, algorithm_id: str, delivery_id: str, bus: EventBus):
         self._algorithm_id = algorithm_id
-        self._delivery_id  = delivery_id
-        self._bus          = bus
+        self._delivery_id = delivery_id
+        self._bus = bus
 
         # Node store: cell_id → TraceNode dict
         # Updated in-place as status progresses open → closed → path
@@ -89,10 +89,10 @@ class StackTraceBuilder:
         self._edges: dict[tuple[str, str], dict] = {}
 
         # Running metadata — updated as events arrive so finalize() is O(1)
-        self._max_depth:   int   = 0
-        self._max_g:       float = 0.0
-        self._max_f:       float = 0.0
-        self._total_steps: int   = 0
+        self._max_depth: int = 0
+        self._max_g: float = 0.0
+        self._max_f: float = 0.0
+        self._total_steps: int = 0
 
         # Completion flag — set on delivery_complete
         self._complete: bool = False
@@ -151,17 +151,17 @@ class StackTraceBuilder:
 
         return {
             "algorithm_id": self._algorithm_id,
-            "delivery_id":  self._delivery_id,
-            "nodes":        list(self._nodes.values()),
-            "edges":        list(self._edges.values()),
+            "delivery_id": self._delivery_id,
+            "nodes": list(self._nodes.values()),
+            "edges": list(self._edges.values()),
             "metadata": {
                 "total_steps": self._total_steps,
-                "max_depth":   self._max_depth,
-                "max_g":       self._max_g,
-                "max_f":       self._max_f,
-                "complete":    self._complete,
-                "node_count":  len(self._nodes),
-                "edge_count":  len(self._edges),
+                "max_depth": self._max_depth,
+                "max_g": self._max_g,
+                "max_f": self._max_f,
+                "complete": self._complete,
+                "node_count": len(self._nodes),
+                "edge_count": len(self._edges),
             },
         }
 
@@ -237,9 +237,9 @@ class StackTraceBuilder:
 
         # Gate 2: only process events we care about
         dispatch: dict[str, Callable[[dict], None]] = {
-            "node_visit":        self._on_node_visit,
-            "node_expand":       self._on_node_expand,
-            "path_step":         self._on_path_step,
+            "node_visit": self._on_node_visit,
+            "node_expand": self._on_node_expand,
+            "path_step": self._on_path_step,
             "delivery_complete": self._on_delivery_complete,
         }
 
@@ -269,7 +269,7 @@ class StackTraceBuilder:
             return
 
         node_id = node_data["id"]
-        step    = event.get("step", 0)
+        step = event.get("step", 0)
 
         if node_id not in self._nodes:
             self._nodes[node_id] = self._build_node(node_data, step, "open")
@@ -298,7 +298,7 @@ class StackTraceBuilder:
             return
 
         node_id = node_data["id"]
-        step    = event.get("step", 0)
+        step = event.get("step", 0)
 
         if node_id in self._nodes:
             # Upgrade status: open → closed
@@ -332,7 +332,7 @@ class StackTraceBuilder:
             return
 
         node_id = node_data["id"]
-        step    = event.get("step", 0)
+        step = event.get("step", 0)
 
         if node_id in self._nodes:
             self._nodes[node_id]["status"] = "path"
@@ -364,12 +364,14 @@ class StackTraceBuilder:
         finished_graph = self.finalize()
 
         # Publish back to bus — RunController and WS server both consume this
-        self._bus.publish({
-            "event_type":   "trace_graph_ready",
-            "algorithm_id": self._algorithm_id,
-            "delivery_id":  self._delivery_id,
-            "graph":        finished_graph,
-        })
+        self._bus.publish(
+            {
+                "event_type": "trace_graph_ready",
+                "algorithm_id": self._algorithm_id,
+                "delivery_id": self._delivery_id,
+                "graph": finished_graph,
+            }
+        )
 
         # Invoke optional callback registered by RunController
         if self._on_complete_cb:
@@ -386,17 +388,17 @@ class StackTraceBuilder:
         simulation state at any point in time.
         """
         return {
-            "id":        node_data["id"],
-            "x":         node_data["x"],
-            "y":         node_data["y"],
+            "id": node_data["id"],
+            "x": node_data["x"],
+            "y": node_data["y"],
             "cell_type": node_data["cell_type"],
-            "g":         node_data["g"],
-            "h":         node_data["h"],
-            "f":         node_data["f"],
-            "depth":     node_data["depth"],
+            "g": node_data["g"],
+            "h": node_data["h"],
+            "f": node_data["f"],
+            "depth": node_data["depth"],
             "parent_id": node_data.get("parent_id"),
-            "status":    status,
-            "step":      step,
+            "status": status,
+            "step": step,
         }
 
     def _record_edge(self, edge_data: dict) -> None:
@@ -412,8 +414,8 @@ class StackTraceBuilder:
         This cost is used by the 3D graph to size particle density.
         """
         from_id = edge_data["from_id"]
-        to_id   = edge_data["to_id"]
-        key     = (from_id, to_id)
+        to_id = edge_data["to_id"]
+        key = (from_id, to_id)
 
         # Priority guard: never overwrite a path edge
         existing = self._edges.get(key)
@@ -421,10 +423,10 @@ class StackTraceBuilder:
             return
 
         self._edges[key] = {
-            "from_id":   from_id,
-            "to_id":     to_id,
+            "from_id": from_id,
+            "to_id": to_id,
             "edge_type": edge_data["edge_type"],
-            "cost":      edge_data["cost"],
+            "cost": edge_data["cost"],
         }
 
     def _update_metadata(self, node_data: dict, step: int) -> None:
@@ -440,6 +442,6 @@ class StackTraceBuilder:
         over all nodes at the end.
         """
         self._total_steps = max(self._total_steps, step)
-        self._max_depth   = max(self._max_depth,   node_data.get("depth", 0))
-        self._max_g       = max(self._max_g,        node_data.get("g", 0.0))
-        self._max_f       = max(self._max_f,        node_data.get("f", 0.0))
+        self._max_depth = max(self._max_depth, node_data.get("depth", 0))
+        self._max_g = max(self._max_g, node_data.get("g", 0.0))
+        self._max_f = max(self._max_f, node_data.get("f", 0.0))

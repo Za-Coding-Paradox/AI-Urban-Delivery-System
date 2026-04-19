@@ -54,9 +54,19 @@ def reset_server_state(tmp_path):
     from backend.engine.event_bus import EventBus
     from backend.engine.profile_manager import ProfileManager
 
-    # Inject fresh singletons
+    # Inject fresh singletons.
+    # _bus and _profile_mgr are pre-injected so the lifespan guard
+    # (if x is None: create) skips reinitialising them, preserving
+    # test isolation (fresh bus, tmp_path profile dir).
+    #
+    # _executor and _event_queue are reset to None so the lifespan
+    # ALWAYS creates fresh instances. The executor from the previous
+    # test's lifespan is shut down during that test's teardown —
+    # leaving a dead executor would cause "cannot schedule new futures
+    # after shutdown" on any run_in_executor call in the next test.
     server_module._bus         = EventBus()
-    server_module._event_queue = __import__("asyncio").Queue(maxsize=10_000)
+    server_module._event_queue = None   # lifespan creates fresh per-test
+    server_module._executor    = None   # lifespan creates fresh per-test
     server_module._profile_mgr = ProfileManager(profiles_dir=tmp_path)
     server_module._ws_clients  = set()
     server_module._active_runs = {}
@@ -64,10 +74,15 @@ def reset_server_state(tmp_path):
 
     yield
 
-    # Cleanup — ensure no lingering subscribers
+    # Cleanup — ensure no lingering subscribers or state leaks
     server_module._ws_clients  = set()
     server_module._active_runs = {}
     server_module._run_results = {}
+    # Reset executor and queue to None so the next test's lifespan
+    # creates fresh ones (the current ones will be shut down by the
+    # lifespan teardown that runs after this yield block returns)
+    server_module._executor    = None
+    server_module._event_queue = None
 
 
 @pytest.fixture

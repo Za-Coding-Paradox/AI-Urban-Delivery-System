@@ -121,11 +121,21 @@ async def lifespan(application: FastAPI):
     """
     global _bus, _event_queue, _loop, _executor, _profile_mgr
 
-    _loop         = asyncio.get_event_loop()
-    _bus          = EventBus()
-    _event_queue  = asyncio.Queue(maxsize=10_000)
-    _executor     = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sim-worker")
-    _profile_mgr  = ProfileManager()
+    # Guard: only initialise singletons that are still None.
+    # Tests pre-inject their own instances (fresh EventBus, tmp_path
+    # ProfileManager) via the reset_server_state fixture BEFORE the
+    # TestClient enters this lifespan. Unconditionally overwriting here
+    # would discard the injected values and break test isolation.
+    # In production every singleton starts as None so the full block runs.
+    _loop = asyncio.get_event_loop()
+    if _bus is None:
+        _bus = EventBus()
+    if _event_queue is None:
+        _event_queue = asyncio.Queue(maxsize=10_000)
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sim-worker")
+    if _profile_mgr is None:
+        _profile_mgr = ProfileManager()
 
     # Subscribe the async bridge to the EventBus.
     # Every event published to the bus also gets enqueued for WS broadcast.
@@ -179,7 +189,21 @@ async def _broadcast_task() -> None:
     Why not broadcast directly inside _sync_bridge?
     Because _sync_bridge is called from a thread — it cannot await.
     The queue is the required intermediary.
+
+    ── why `global _ws_clients` is required here ────────────────────────
+    Python scoping rule: if a name appears on the LEFT side of ANY
+    assignment inside a function — including augmented assignment like
+    `-=` — Python treats that name as LOCAL throughout the entire
+    function, even for reads that precede the assignment.
+
+    `_ws_clients -= dead` is augmented assignment (__isub__). Without
+    the `global` declaration, Python marks `_ws_clients` as local. The
+    earlier `if not _ws_clients:` then tries to read a local that has
+    never been assigned — UnboundLocalError. Always declare `global` for
+    module-level mutable variables you intend to mutate from a function.
     """
+    global _ws_clients, _event_queue
+
     while True:
         try:
             event = await _event_queue.get()
@@ -189,7 +213,7 @@ async def _broadcast_task() -> None:
         if not _ws_clients:
             continue
 
-        dead: set[WebSocket] = set()
+        dead: set = set()
 
         for ws in list(_ws_clients):
             try:
