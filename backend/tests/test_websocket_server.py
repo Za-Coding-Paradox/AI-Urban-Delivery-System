@@ -20,17 +20,13 @@
 # TestClient-based tests — they run as regular sync pytest functions.
 # The WS tests use client.websocket_connect() which is also synchronous.
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.websocket.server as server_module
+import backend.websocket.web_server as server_module
 from backend.engine.event_bus import EventBus
-from backend.websocket.server import app
-
+from backend.websocket.web_server import app
 
 # ── test fixtures ──────────────────────────────────────────────────────────────
 
@@ -51,7 +47,6 @@ def reset_server_state(tmp_path):
     For a production system, dependency injection (FastAPI Depends()) would
     be cleaner. For this simulator, patching is correct.
     """
-    from backend.engine.event_bus import EventBus
     from backend.engine.profile_manager import ProfileManager
 
     # Inject fresh singletons.
@@ -64,24 +59,24 @@ def reset_server_state(tmp_path):
     # test's lifespan is shut down during that test's teardown —
     # leaving a dead executor would cause "cannot schedule new futures
     # after shutdown" on any run_in_executor call in the next test.
-    server_module._bus         = EventBus()
-    server_module._event_queue = None   # lifespan creates fresh per-test
-    server_module._executor    = None   # lifespan creates fresh per-test
+    server_module._bus = EventBus()
+    server_module._event_queue = None  # lifespan creates fresh per-test
+    server_module._executor = None  # lifespan creates fresh per-test
     server_module._profile_mgr = ProfileManager(profiles_dir=tmp_path)
-    server_module._ws_clients  = set()
+    server_module._ws_clients = set()
     server_module._active_runs = {}
     server_module._run_results = {}
 
     yield
 
     # Cleanup — ensure no lingering subscribers or state leaks
-    server_module._ws_clients  = set()
+    server_module._ws_clients = set()
     server_module._active_runs = {}
     server_module._run_results = {}
     # Reset executor and queue to None so the next test's lifespan
     # creates fresh ones (the current ones will be shut down by the
     # lifespan teardown that runs after this yield block returns)
-    server_module._executor    = None
+    server_module._executor = None
     server_module._event_queue = None
 
 
@@ -340,11 +335,13 @@ def test_websocket_receives_bus_events(client):
     integration test comments below.
     """
     # Pre-populate the bus with a known event
-    server_module._bus.publish({
-        "event_type": "node_visit",
-        "algorithm_id": "bfs",
-        "step": 42,
-    })
+    server_module._bus.publish(
+        {
+            "event_type": "node_visit",
+            "algorithm_id": "bfs",
+            "step": 42,
+        }
+    )
 
     with client.websocket_connect("/ws/event-test") as ws:
         ws.receive_json()  # connected

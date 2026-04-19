@@ -51,8 +51,6 @@ import asyncio
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,7 +60,6 @@ from pydantic import BaseModel
 from backend.engine.event_bus import EventBus
 from backend.engine.profile_manager import ProfileManager, ProfileManagerError
 from backend.websocket.run_controller import RunController, RunResult, RunStatus
-
 
 # ── application setup ──────────────────────────────────────────────────────────
 
@@ -80,7 +77,7 @@ app = FastAPI(
 # In development the frontend is typically on localhost:5173 (Vite default).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # tighten in production
+    allow_origins=["*"],  # tighten in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -96,14 +93,14 @@ app.add_middleware(
 # module-level singletons are simpler and more readable. A production
 # service would use Depends() and a proper DI container.
 
-_bus:          EventBus | None = None
-_event_queue:  asyncio.Queue | None = None
-_loop:         asyncio.AbstractEventLoop | None = None
-_executor:     ThreadPoolExecutor | None = None
-_profile_mgr:  ProfileManager | None = None
-_ws_clients:   set[WebSocket] = set()
-_active_runs:  dict[str, RunController] = {}
-_run_results:  dict[str, RunResult] = {}
+_bus: EventBus | None = None
+_event_queue: asyncio.Queue | None = None
+_loop: asyncio.AbstractEventLoop | None = None
+_executor: ThreadPoolExecutor | None = None
+_profile_mgr: ProfileManager | None = None
+_ws_clients: set[WebSocket] = set()
+_active_runs: dict[str, RunController] = {}
+_run_results: dict[str, RunResult] = {}
 
 
 # ── lifespan ───────────────────────────────────────────────────────────────────
@@ -236,13 +233,13 @@ class GenerateProfileRequest(BaseModel):
 
 
 class RunRequest(BaseModel):
-    profile_name:     str | None = None
-    profile:          dict | None = None    # inline profile (alternative to name)
-    algorithm_ids:    list[str] | None = None  # override enabled algorithms
+    profile_name: str | None = None
+    profile: dict | None = None  # inline profile (alternative to name)
+    algorithm_ids: list[str] | None = None  # override enabled algorithms
 
 
 class ReplayRequest(BaseModel):
-    run_id:     str
+    run_id: str
     event_type: str = "*"
 
 
@@ -256,10 +253,10 @@ async def health() -> dict:
     Use this to verify the server is running before starting the frontend.
     """
     return {
-        "status":            "ok",
-        "ws_clients":        len(_ws_clients),
-        "active_runs":       len(_active_runs),
-        "bus_buffer_size":   _bus.buffer_size() if _bus else 0,
+        "status": "ok",
+        "ws_clients": len(_ws_clients),
+        "active_runs": len(_active_runs),
+        "bus_buffer_size": _bus.buffer_size() if _bus else 0,
     }
 
 
@@ -338,11 +335,11 @@ async def start_run(request: RunRequest) -> dict:
     """
     # ── resolve the profile ────────────────────────────────────────────────────
     if request.profile:
-        profile      = request.profile
+        profile = request.profile
         profile_name = profile.get("meta", {}).get("name", "inline")
     elif request.profile_name:
         try:
-            profile      = _profile_mgr.load(request.profile_name)
+            profile = _profile_mgr.load(request.profile_name)
             profile_name = request.profile_name
         except ProfileManagerError as e:
             return JSONResponse(status_code=404, content={"error": str(e)})
@@ -358,7 +355,7 @@ async def start_run(request: RunRequest) -> dict:
             algo_cfg["enabled"] = algo_cfg["id"] in request.algorithm_ids
 
     # ── create and launch the run ──────────────────────────────────────────────
-    run_id     = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
     controller = RunController(
         profile=profile,
         bus=_bus,
@@ -381,10 +378,10 @@ async def start_run(request: RunRequest) -> dict:
     asyncio.create_task(_execute_and_store(), name=f"run-{run_id}")
 
     return {
-        "run_id":       run_id,
-        "status":       RunStatus.PENDING,
+        "run_id": run_id,
+        "status": RunStatus.PENDING,
         "profile_name": profile_name,
-        "message":      "Run started. Connect to WebSocket /ws/{client_id} for live events.",
+        "message": "Run started. Connect to WebSocket /ws/{client_id} for live events.",
     }
 
 
@@ -426,12 +423,12 @@ async def get_run_results(run_id: str) -> dict:
         return JSONResponse(status_code=404, content={"error": f"Run '{run_id}' not found."})
 
     return {
-        "run_id":       result.run_id,
+        "run_id": result.run_id,
         "profile_name": result.profile_name,
-        "seed":         result.seed,
-        "status":       result.status,
-        "metrics":      result.all_metrics(),
-        "graphs":       result.all_graphs(),
+        "seed": result.seed,
+        "status": result.status,
+        "metrics": result.all_metrics(),
+        "graphs": result.all_graphs(),
     }
 
 
@@ -472,7 +469,7 @@ async def get_bus_buffer(limit: int = 100, offset: int = 0) -> dict:
     Useful for debugging: inspect every event the simulation produced.
     The buffer is the complete history — nothing is filtered.
     """
-    total  = _bus.buffer_size()
+    total = _bus.buffer_size()
     events = _bus.get_buffer_slice(offset, offset + limit)
     return {"total": total, "offset": offset, "limit": limit, "events": events}
 
@@ -511,12 +508,14 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str) -> None:
 
     try:
         # Confirm connection
-        await websocket.send_json({
-            "event_type": "connected",
-            "client_id":  client_id,
-            "message":    "Connected to simulation server. Listening for events.",
-            "bus_buffer_size": _bus.buffer_size(),
-        })
+        await websocket.send_json(
+            {
+                "event_type": "connected",
+                "client_id": client_id,
+                "message": "Connected to simulation server. Listening for events.",
+                "bus_buffer_size": _bus.buffer_size(),
+            }
+        )
 
         # Main read loop — keeps the connection alive and handles client requests
         while True:
@@ -530,10 +529,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str) -> None:
             try:
                 message = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json({
-                    "event_type": "error",
-                    "message":    "Invalid JSON",
-                })
+                await websocket.send_json(
+                    {
+                        "event_type": "error",
+                        "message": "Invalid JSON",
+                    }
+                )
                 continue
 
             await _handle_client_message(websocket, message)
@@ -563,15 +564,17 @@ async def _handle_client_message(ws: WebSocket, message: dict) -> None:
         await ws.send_json({"event_type": "pong"})
 
     elif msg_type == "status":
-        await ws.send_json({
-            "event_type":      "server_status",
-            "ws_clients":      len(_ws_clients),
-            "active_runs":     len(_active_runs),
-            "bus_buffer_size": _bus.buffer_size(),
-        })
+        await ws.send_json(
+            {
+                "event_type": "server_status",
+                "ws_clients": len(_ws_clients),
+                "active_runs": len(_active_runs),
+                "bus_buffer_size": _bus.buffer_size(),
+            }
+        )
 
     elif msg_type == "replay":
-        run_id     = message.get("run_id")
+        run_id = message.get("run_id")
         event_type = message.get("event_type", "*")
 
         if not run_id:
@@ -588,10 +591,12 @@ async def _handle_client_message(ws: WebSocket, message: dict) -> None:
         await ws.send_json({"event_type": "replay_complete", "count": replayed})
 
     else:
-        await ws.send_json({
-            "event_type": "error",
-            "message":    f"Unknown message type '{msg_type}'",
-        })
+        await ws.send_json(
+            {
+                "event_type": "error",
+                "message": f"Unknown message type '{msg_type}'",
+            }
+        )
 
 
 # ── entry point ────────────────────────────────────────────────────────────────
@@ -602,9 +607,9 @@ def main() -> None:
     Launch the server with uvicorn.
 
     Usage:
-        python -m backend.websocket.server
+        python -m backend.websocket.web_server
     Or:
-        uvicorn backend.websocket.server:app --reload --port 8000
+        uvicorn backend.websocket.web_server:app --reload --port 8000
 
     The --reload flag is for development only. In production omit it.
     host="0.0.0.0" makes the server accessible from other machines on the
@@ -612,8 +617,9 @@ def main() -> None:
     only access use host="127.0.0.1".
     """
     import uvicorn
+
     uvicorn.run(
-        "backend.websocket.server:app",
+        "backend.websocket.web_server:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
