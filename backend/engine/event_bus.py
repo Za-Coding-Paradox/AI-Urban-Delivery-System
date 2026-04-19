@@ -1,6 +1,7 @@
 # backend/engine/event_bus.py
 
 import asyncio
+import inspect
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -181,7 +182,7 @@ class EventBus:
         A normal function can't directly call an async function.
         This method bridges that gap.
         """
-        if asyncio.iscoroutinefunction(handler):
+        if inspect.iscoroutinefunction(handler):
             # Handler is async — try to schedule it on the running event loop
             try:
                 loop = asyncio.get_running_loop()
