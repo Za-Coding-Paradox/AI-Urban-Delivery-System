@@ -48,15 +48,39 @@ export function GridView() {
   }, [metrics, selectedAlgo, activeDelivery]);
 
   // ── simulation state derived from playback cursor ──────────────────────────
-  // Walk segmentEvents up to the current cursor — already filtered to this
-  // (algo, delivery) pair, so no per-event algorithm_id check is needed.
+  // playback.cursor is an index into the flat events array (all algos/deliveries).
+  // segmentEvents is already filtered to this (algo, delivery) pair, so its
+  // indices don't match the flat cursor directly.
+  //
+  // We read flat events from the store to compute a segment-local cursor:
+  // count how many flat events up to playback.cursor belong to this segment,
+  // then walk that many entries in segmentEvents.
+  const flatEvents = useStore((s) => s.events);
+  const segmentKey_str = `${selectedAlgo}:${activeDelivery}`;
+
+  const segmentCursor = useMemo(() => {
+    let count = 0;
+    for (let i = 0; i <= playback.cursor && i < flatEvents.length; i++) {
+      const ev = flatEvents[i] as any;
+      if (
+        ev &&
+        typeof ev.algorithm_id === "string" &&
+        typeof ev.delivery_id  === "string" &&
+        `${ev.algorithm_id}:${ev.delivery_id}` === segmentKey_str
+      ) {
+        count++;
+      }
+    }
+    return count; // number of segment events visible at the current cursor
+  }, [flatEvents, playback.cursor, segmentKey_str]);
+
   const simState = useMemo(() => {
     const visited  = new Set<string>();
     const frontier = new Set<string>();
     const pathSet  = new Set<string>();
     let   robotPos: { x: number; y: number } | null = null;
 
-    for (let i = 0; i <= playback.cursor && i < segmentEvents.length; i++) {
+    for (let i = 0; i < segmentCursor && i < segmentEvents.length; i++) {
       const ev = segmentEvents[i] as any;
       if (!ev) continue;
 
@@ -71,7 +95,7 @@ export function GridView() {
       }
     }
     return { visited, frontier, pathSet, robotPos };
-  }, [segmentEvents, playback.cursor]);
+  }, [segmentEvents, segmentCursor]);
 
   // Whether any simulation events exist for this (algo, delivery) pair
   const hasSimulation = segmentEvents.length > 0;
