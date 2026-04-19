@@ -1,111 +1,210 @@
+/* ── Tailwind v4 ──────────────────────────────────────────────────────────────
+   In Tailwind v4, @import "tailwindcss" replaces the old @tailwind directives.
+   This single line pulls in base reset, components, and utilities.
+   The @tailwindcss/vite plugin processes this during build — no separate
+   PostCSS config needed.
+   ─────────────────────────────────────────────────────────────────────────── */
+@import "tailwindcss";
+
+/* ── design tokens ─────────────────────────────────────────────────────────────
+   All colours, spacing, and visual constants for the simulator UI live here
+   as CSS custom properties. Components reference these tokens rather than
+   hardcoding values, so changing the look means editing one place.
+
+   The palette mirrors the Palantir Foundry dark-UI aesthetic:
+   near-black backgrounds, muted slate surfaces, teal/green accents for
+   algorithm path data, amber for heuristic-related data, coral for DFS
+   backtrack edges. Each colour has a semantic name so the intent is clear
+   in component code.
+   ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* ── backgrounds ────────────────────────────────────────────────────────── */
+  --bg-base:       #0d0f12;   /* outermost shell — near black                 */
+  --bg-surface:    #13161b;   /* panels, sidebars                             */
+  --bg-raised:     #1a1e26;   /* cards, inputs, tooltips                      */
+  --bg-overlay:    #22283380; /* modal backdrops (with transparency)          */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* ── borders ────────────────────────────────────────────────────────────── */
+  --border-subtle:  #ffffff0f; /* very faint — panel separators               */
+  --border-default: #ffffff1a; /* standard borders                            */
+  --border-strong:  #ffffff2e; /* active / focused borders                    */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* ── text ───────────────────────────────────────────────────────────────── */
+  --text-primary:   #e8eaf0;   /* main readable text                          */
+  --text-secondary: #8b90a0;   /* labels, descriptions                        */
+  --text-muted:     #4a5060;   /* placeholders, disabled states               */
+  --text-inverse:   #0d0f12;   /* text on bright/accent backgrounds           */
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* ── accent colours (algorithm-semantic) ───────────────────────────────── */
+  --accent-teal:    #1d9e75;   /* base station, primary brand accent          */
+  --accent-teal-dim:#0f6e56;   /* darker teal for hover / pressed             */
+  --accent-green:   #639922;   /* path nodes — final solution route           */
+  --accent-purple:  #7f77dd;   /* expanded nodes — committed search nodes     */
+  --accent-blue:    #378add;   /* frontier / open nodes                       */
+  --accent-amber:   #ef9f27;   /* heuristic values, goal nodes                */
+  --accent-coral:   #d85a30;   /* DFS backtrack edges                         */
+  --accent-red:     #e24b4a;   /* errors, failed paths                        */
+  --accent-gray:    #888780;   /* visited / pruned nodes                      */
+
+  /* ── node status colours (directly from the plan's visual encoding) ─────── */
+  --node-start:    #1d9e75;   /* large teal sphere   — depth 0 root          */
+  --node-goal:     #ef9f27;   /* large amber sphere  — delivery destination  */
+  --node-path:     #639922;   /* medium green sphere — final path            */
+  --node-expanded: #7f77dd;   /* medium purple sphere — closed set           */
+  --node-frontier: #378add;   /* pulsing blue sphere  — open list            */
+  --node-visited:  #888780;   /* small gray sphere    — visited not expanded */
+  --node-pruned:   #d85a3066; /* tiny coral, low opacity — generated not visited */
+
+  /* ── edge type colours ──────────────────────────────────────────────────── */
+  --edge-expansion: #888780;   /* solid thin gray                             */
+  --edge-path:      #639922;   /* solid thick green                           */
+  --edge-backtrack: #d85a30;   /* dashed coral                                */
+
+  /* ── typography ─────────────────────────────────────────────────────────── */
+  --font-sans: "Inter", "system-ui", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  /* ── spacing scale ──────────────────────────────────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+
+  /* ── border radius ──────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ── animation ──────────────────────────────────────────────────────────── */
+  --duration-fast:   120ms;
+  --duration-normal: 200ms;
+  --duration-slow:   350ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+/* ── base reset ────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+  /* Prevents layout shift from scrollbar appearing/disappearing */
+  overflow-y: scroll;
 }
 
 body {
-  margin: 0;
+  height: 100%;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  /* Crisp text rendering — important for the dense data-heavy UI */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+/* ── scrollbar styling ─────────────────────────────────────────────────────── */
+/* Custom scrollbars match the dark UI rather than the OS default */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
 }
-p {
-  margin: 0;
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
-code,
-.counter {
-  font-family: var(--mono);
+/* ── focus styles ──────────────────────────────────────────────────────────── */
+/* Keyboard focus rings — accessible but styled to match the dark theme */
+:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── utility classes not covered by Tailwind ───────────────────────────────── */
+
+/* Monospace — for coordinate labels, step counters, raw JSON */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Status badge base */
+.badge {
   display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* Node status badge colours */
+.badge-start    { background: var(--node-start)20;    color: var(--node-start);    }
+.badge-goal     { background: var(--node-goal)20;     color: var(--node-goal);     }
+.badge-path     { background: var(--node-path)20;     color: var(--node-path);     }
+.badge-expanded { background: var(--node-expanded)20; color: var(--node-expanded); }
+.badge-frontier { background: var(--node-frontier)20; color: var(--node-frontier); }
+.badge-visited  { background: var(--node-visited)20;  color: var(--node-visited);  }
+
+/* Algorithm colour badges */
+.badge-bfs    { background: #378add20; color: #378add; }
+.badge-dfs    { background: #d85a3020; color: #d85a30; }
+.badge-ucs    { background: #7f77dd20; color: #7f77dd; }
+.badge-greedy { background: #ef9f2720; color: #ef9f27; }
+.badge-astar  { background: #1d9e7520; color: #1d9e75; }
+
+/* ── animation keyframes ───────────────────────────────────────────────────── */
+
+/* Frontier node pulse — used by the 3D graph's open-list spheres */
+@keyframes pulse-ring {
+  0%   { opacity: 0.8; transform: scale(1);    }
+  50%  { opacity: 0.4; transform: scale(1.15); }
+  100% { opacity: 0.8; transform: scale(1);    }
+}
+
+/* Subtle fade-in for panels appearing */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Slide-in from right — for the inspector panel */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+.animate-fade-in {
+  animation: fade-in var(--duration-normal) var(--ease-out) both;
+}
+
+.animate-slide-right {
+  animation: slide-in-right var(--duration-normal) var(--ease-out) both;
 }
