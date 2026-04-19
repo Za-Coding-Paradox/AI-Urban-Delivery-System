@@ -23,7 +23,7 @@ export function GridView() {
   const algorithmStates = useAlgorithmStates();
   const activeDelivery = useActiveDelivery();
   const playback       = usePlayback();
-  const store          = useStore();
+  const setActiveDelivery = useStore((s) => s.setActiveDelivery);
 
   const canvasRef      = useRef<HTMLCanvasElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
@@ -193,8 +193,9 @@ export function GridView() {
           );
           return (
             <button
-              key={id}
-              onClick={() => setSelectedAlgo(id)}
+	    <button
+	    key={d}
+	    onClick={() => setActiveDelivery(d)}
               disabled={!hasMets}
               style={{
                 padding:      "3px 10px",

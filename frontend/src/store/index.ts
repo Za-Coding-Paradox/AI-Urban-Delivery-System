@@ -321,7 +321,8 @@ export const useStore = create<SimStore>((set, get) => ({
 export const useProfile        = () => useStore((s) => s.profile);
 export const useRunStatus      = () => useStore((s) => s.runStatus);
 export const useConnected      = () => useStore((s) => s.connected);
-export const useGridCells      = () => useStore((s) => s.profile?.grid.cells ?? []);
+const EMPTY_CELLS: any[] = [];
+export const useGridCells      = () => useStore((s) => s.profile?.grid.cells ?? EMPTY_CELLS);
 export const useMetrics        = () => useStore((s) => s.metrics);
 export const useGraphs         = () => useStore((s) => s.graphs);
 export const useSelectedNode   = () => useStore((s) => s.selectedNode);
