@@ -318,6 +318,11 @@ class RunController:
                 runner  = get_runner(algo_id, self._bus)
                 metrics = runner.run(cells, start_cell, goal_cell, algo_config)
 
+                # BaseRunner._make_metrics sets delivery_id to the cell id
+                # string (e.g. "7,3"). Override it with the logical delivery
+                # label ("D1"…"D5") so the frontend can group metrics correctly.
+                metrics["delivery_id"] = delivery_id
+
                 # Collect results
                 delivery_result.metrics.append(metrics)
 

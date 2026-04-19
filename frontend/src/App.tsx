@@ -4,22 +4,27 @@
 // Main area: one of [ GridView | GraphView | MetricsView ] depending on activeView.
 
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { useConnected, useRunStatus, useActiveView, useStore } from "@/store";
+import { useConnected, useRunStatus, useActiveView, useStore, useInspectorOpen, useSelectedNode } from "@/store";
 import type { ActiveView } from "@/types";
-import { ProfilePanel }   from "@/components/controls/ProfilePanel";
-import { GridView }       from "@/components/grid/GridView";
-import { GraphView }      from "@/components/graph/GraphView";
-import { MetricsView }    from "@/components/metrics/MetricsView";
-import { PlaybackBar }    from "@/components/controls/PlaybackBar";
-import { StatusBar }      from "@/components/shared/StatusBar";
+import { ProfilePanel }        from "@/components/controls/ProfilePanel";
+import { GridView }            from "@/components/grid/GridView";
+import { GraphView }           from "@/components/graph/GraphView";
+import { MetricsView }         from "@/components/metrics/MetricsView";
+import { PlaybackBar }         from "@/components/controls/PlaybackBar";
+import { StatusBar }           from "@/components/shared/StatusBar";
+import { NodeInspectorPanel }  from "@/components/inspector/NodeInspectorPanel";
 
 export default function App() {
   useWebSocket();
 
-  const connected  = useConnected();
-  const runStatus  = useRunStatus();
-  const activeView = useActiveView();
-  const setView    = useStore((s) => s.setActiveView);
+  const connected     = useConnected();
+  const runStatus     = useRunStatus();
+  const activeView    = useActiveView();
+  const setView       = useStore((s) => s.setActiveView);
+  const inspectorOpen = useInspectorOpen();
+  const selectedNode  = useSelectedNode();
+  const setInspector  = useStore((s) => s.setInspectorOpen);
+  const clearSelected = useStore((s) => s.clearSelected);
 
   return (
     <div
@@ -88,6 +93,52 @@ export default function App() {
           ))}
         </nav>
 
+        {/* Inspector toggle button */}
+        <button
+          onClick={() => {
+            if (inspectorOpen) {
+              clearSelected();
+            } else {
+              setInspector(true);
+            }
+          }}
+          title="Toggle node inspector"
+          style={{
+            padding:      "5px 10px",
+            borderRadius: "6px",
+            border:       `1px solid ${inspectorOpen ? "var(--accent-teal)" : "var(--border-default)"}`,
+            background:   inspectorOpen ? "var(--accent-teal)18" : "transparent",
+            color:        inspectorOpen ? "var(--accent-teal)" : "var(--text-secondary)",
+            cursor:       "pointer",
+            fontSize:     "11px",
+            fontWeight:   inspectorOpen ? 600 : 400,
+            display:      "flex",
+            alignItems:   "center",
+            gap:          "5px",
+            transition:   "all 120ms",
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <rect x="1" y="1" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.2"/>
+            <line x1="4" y1="4.5" x2="9" y2="4.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+            <line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+            <line x1="4" y1="8.5" x2="7" y2="8.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+          </svg>
+          Inspector
+          {selectedNode && (
+            <span style={{
+              background: "var(--accent-teal)",
+              color: "#fff",
+              borderRadius: "8px",
+              fontSize: "9px",
+              padding: "1px 5px",
+              fontWeight: 700,
+            }}>
+              {selectedNode.node.id}
+            </span>
+          )}
+        </button>
+
         {/* Status indicators */}
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <RunStatusChip status={runStatus} />
@@ -114,10 +165,15 @@ export default function App() {
 
         {/* Main content */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            {activeView === "grid"    && <GridView />}
-            {activeView === "graph"   && <GraphView />}
-            {activeView === "metrics" && <MetricsView />}
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex" }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              {activeView === "grid"    && <GridView />}
+              {activeView === "graph"   && <GraphView />}
+              {activeView === "metrics" && <MetricsView />}
+            </div>
+
+            {/* Inspector panel — slides in from the right */}
+            {inspectorOpen && <NodeInspectorPanel />}
           </div>
 
           {/* Playback bar — always visible at bottom */}

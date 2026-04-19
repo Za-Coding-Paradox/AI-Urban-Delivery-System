@@ -8,14 +8,15 @@ import { ALGORITHM_LABELS, ALGORITHM_COLOR } from "@/lib/constants";
 import { formatCost, formatTime } from "@/lib/utils";
 
 export function NodeInspectorPanel() {
-  const selectedNode = useStore((s) => s.selectedNode);
+  const selectedNode  = useStore((s) => s.selectedNode);
   const clearSelected = useStore((s) => s.clearSelected);
+  const setInspector  = useStore((s) => s.setInspectorOpen);
   const [activeTab, setActiveTab] = useState<"info" | "history" | "raw">("info");
 
-  if (!selectedNode) return null;
-
-  const { node, algorithm_id, delivery_id } = selectedNode;
-  const algoColor = ALGORITHM_COLOR[algorithm_id];
+  const handleClose = () => {
+    clearSelected();
+    setInspector(false);
+  };
 
   return (
     <div
@@ -50,7 +51,7 @@ export function NodeInspectorPanel() {
             Node Inspector
           </span>
           <button
-            onClick={clearSelected}
+            onClick={handleClose}
             style={{
               background: "none", border: "none", color: "var(--text-muted)",
               cursor: "pointer", fontSize: "16px", lineHeight: 1, padding: "0 2px",
@@ -60,67 +61,76 @@ export function NodeInspectorPanel() {
           </button>
         </div>
 
-        {/* Node ID + algo badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div
-            style={{
-              fontFamily:  "var(--font-mono)",
-              fontSize:    "16px",
-              fontWeight:  700,
-              color:       "var(--text-primary)",
-            }}
-          >
-            {node.id}
+        {selectedNode ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>
+                {selectedNode.node.id}
+              </div>
+              <StatusBadge status={selectedNode.node.status} />
+            </div>
+            <div style={{ fontSize: "10px", color: ALGORITHM_COLOR[selectedNode.algorithm_id], marginTop: "2px" }}>
+              {ALGORITHM_LABELS[selectedNode.algorithm_id]} · {selectedNode.delivery_id}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic" }}>
+            Click a node in the 3D graph to inspect it
           </div>
-          <StatusBadge status={node.status} />
-        </div>
-        <div style={{ fontSize: "10px", color: algoColor, marginTop: "2px" }}>
-          {ALGORITHM_LABELS[algorithm_id]} · {delivery_id}
-        </div>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div
-        style={{
-          display:      "flex",
-          borderBottom: "1px solid var(--border-subtle)",
-          flexShrink:   0,
-        }}
-      >
-        {(["info", "history", "raw"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex:       1,
-              padding:    "7px 0",
-              border:     "none",
-              background: "none",
-              fontSize:   "11px",
-              cursor:     "pointer",
-              color:      activeTab === tab ? "var(--text-primary)" : "var(--text-muted)",
-              fontWeight: activeTab === tab ? 600 : 400,
-              borderBottom: activeTab === tab ? `2px solid ${algoColor}` : "2px solid transparent",
-              transition: "all 120ms",
-            }}
-          >
-            {tab === "info" ? "Details" : tab === "history" ? "History" : "Raw"}
-          </button>
-        ))}
-      </div>
+      {!selectedNode ? (
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", gap: "10px", padding: "24px",
+          color: "var(--text-muted)", textAlign: "center",
+        }}>
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" opacity="0.3">
+            <circle cx="18" cy="18" r="16" stroke="currentColor" strokeWidth="1.5"/>
+            <circle cx="18" cy="18" r="6" stroke="currentColor" strokeWidth="1.5"/>
+            <line x1="18" y1="2" x2="18" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="18" y1="28" x2="18" y2="34" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="2" y1="18" x2="8" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="28" y1="18" x2="34" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <div style={{ fontSize: "12px" }}>No node selected</div>
+          <div style={{ fontSize: "11px" }}>Click any node in the 3D Graph view to inspect its g, h, f values and search history</div>
+        </div>
+      ) : (
+        <>
+          {/* Tabs */}
+          <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
+            {(["info", "history", "raw"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  flex:       1,
+                  padding:    "7px 0",
+                  border:     "none",
+                  background: "none",
+                  fontSize:   "11px",
+                  cursor:     "pointer",
+                  color:      activeTab === tab ? "var(--text-primary)" : "var(--text-muted)",
+                  fontWeight: activeTab === tab ? 600 : 400,
+                  borderBottom: activeTab === tab ? `2px solid ${ALGORITHM_COLOR[selectedNode.algorithm_id]}` : "2px solid transparent",
+                  transition: "all 120ms",
+                }}
+              >
+                {tab === "info" ? "Details" : tab === "history" ? "History" : "Raw"}
+              </button>
+            ))}
+          </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px" }}>
-        {activeTab === "info" && (
-          <InfoTab node={node} algoColor={algoColor} />
-        )}
-        {activeTab === "history" && (
-          <HistoryTab node={node} algoColor={algoColor} />
-        )}
-        {activeTab === "raw" && (
-          <RawTab node={node} algorithm_id={algorithm_id} delivery_id={delivery_id} />
-        )}
-      </div>
+          {/* Tab content */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px" }}>
+            {activeTab === "info"    && <InfoTab    node={selectedNode.node} algoColor={ALGORITHM_COLOR[selectedNode.algorithm_id]} />}
+            {activeTab === "history" && <HistoryTab node={selectedNode.node} algoColor={ALGORITHM_COLOR[selectedNode.algorithm_id]} />}
+            {activeTab === "raw"     && <RawTab     node={selectedNode.node} algorithm_id={selectedNode.algorithm_id} delivery_id={selectedNode.delivery_id} />}
+          </div>
+        </>
+      )}
     </div>
   );
 }

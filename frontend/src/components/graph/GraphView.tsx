@@ -15,7 +15,6 @@ import {
 } from "@/lib/constants";
 import { nodeRadius, nodeVisualType }           from "@/lib/utils";
 import type { AlgorithmId, TraceGraph, TraceGraphNode, TraceGraphEdge } from "@/types";
-import { NodeInspectorPanel } from "@/components/inspector/NodeInspectorPanel";
 
 const X_SCALE = 1.8;
 const Y_SCALE = 2.2;
@@ -232,8 +231,7 @@ export function GraphView() {
         )}
       </div>
 
-      {/* ── Node inspector panel ─────────────────────────────── */}
-      {selectedNode && <NodeInspectorPanel />}
+      {/* Inspector panel is now managed globally in App.tsx via the Inspector toggle */}
     </div>
   );
 }

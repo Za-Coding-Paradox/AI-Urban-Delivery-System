@@ -12,7 +12,7 @@ import {
   CELL_COLORS, CELL_BORDER_COLORS, ALGORITHM_COLOR,
   ALGORITHM_IDS, ALGORITHM_SHORT,
 } from "@/lib/constants";
-import type { Cell, AlgorithmId, MetricsSummary } from "@/types";
+import type { Cell, AlgorithmId, MetricsSummary, TraceEvent } from "@/types";
 
 const GRID = 15;
 
@@ -39,6 +39,35 @@ export function GridView() {
       (m) => m.algorithm_id === selectedAlgo && m.delivery_id === activeDelivery
     ) ?? null;
   }, [metrics, selectedAlgo, activeDelivery]);
+
+  // ── simulation state derived from playback cursor ──────────────────────────
+  // Walk all events up to the current cursor for the selected algorithm.
+  // Accumulate sets of visited/frontier/path cells and the robot's position.
+  const simState = useMemo(() => {
+    const visited  = new Set<string>();
+    const frontier = new Set<string>();
+    const pathSet  = new Set<string>();
+    let   robotPos: { x: number; y: number } | null = null;
+
+    for (let i = 0; i <= playback.cursor && i < events.length; i++) {
+      const ev = events[i] as any;
+      if (!ev || ev.algorithm_id !== selectedAlgo) continue;
+
+      if (ev.event_type === "node_visit" && ev.node) {
+        frontier.add(ev.node.id);
+      } else if (ev.event_type === "node_expand" && ev.node) {
+        frontier.delete(ev.node.id);
+        visited.add(ev.node.id);
+        robotPos = { x: ev.node.x, y: ev.node.y };
+      } else if (ev.event_type === "path_step" && ev.node) {
+        pathSet.add(ev.node.id);
+      }
+    }
+    return { visited, frontier, pathSet, robotPos };
+  }, [events, playback.cursor, selectedAlgo]);
+
+  // Whether any simulation events exist (i.e. a run has been started)
+  const hasSimulation = events.some((ev: any) => ev.algorithm_id === selectedAlgo);
 
   // Resize observer
   useEffect(() => {
@@ -88,15 +117,8 @@ export function GridView() {
 
   // Overlay path on canvas
   const pathCells = activeMetric?.path ?? [];
-  const startCell = cells.find((c) => c.type === "base_station");
-  const goalCell  = cells.find(
-    (c) =>
-      c.type === "delivery_point" &&
-      activeMetric &&
-      c.x === /* derived from delivery */ 0  // patched below
-  );
 
-  // Draw highlighted path overlay using separate canvas
+  // Draw simulation overlay: visited cells, frontier cells, and final path
   const overlayRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!overlayRef.current || cellSize === 0) return;
@@ -106,40 +128,88 @@ export function GridView() {
     overlayRef.current.height = totalSize;
     ctx.clearRect(0, 0, totalSize, totalSize);
 
-    if (!pathCells.length) return;
-
     const color = ALGORITHM_COLOR[selectedAlgo];
 
-    // Draw path line
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-    ctx.lineWidth   = Math.max(2, cellSize * 0.12);
-    ctx.lineCap     = "round";
-    ctx.lineJoin    = "round";
-    ctx.globalAlpha = 0.75;
+    if (hasSimulation) {
+      // ── simulation mode: paint explored cells ──────────────────────────
+      // Visited (expanded) cells — dim tint
+      simState.visited.forEach((id) => {
+        const [sx, sy] = id.split(",").map(Number);
+        const px = sx * (cellSize + 1) + 1;
+        const py = sy * (cellSize + 1) + 1;
+        ctx.fillStyle = color + "28";
+        ctx.fillRect(px, py, cellSize, cellSize);
+      });
 
-    pathCells.forEach(({ x, y }, i) => {
-      const px = x * (cellSize + 1) + 1 + cellSize / 2;
-      const py = y * (cellSize + 1) + 1 + cellSize / 2;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.stroke();
+      // Frontier cells — brighter tint
+      simState.frontier.forEach((id) => {
+        const [sx, sy] = id.split(",").map(Number);
+        const px = sx * (cellSize + 1) + 1;
+        const py = sy * (cellSize + 1) + 1;
+        ctx.fillStyle = color + "55";
+        ctx.fillRect(px, py, cellSize, cellSize);
+        // Frontier border highlight
+        ctx.strokeStyle = color + "99";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+      });
 
-    // Draw dots at each path step
-    ctx.globalAlpha = 1;
-    pathCells.forEach(({ x, y }, i) => {
-      const px = x * (cellSize + 1) + 1 + cellSize / 2;
-      const py = y * (cellSize + 1) + 1 + cellSize / 2;
-      const isFirst = i === 0;
-      const isLast  = i === pathCells.length - 1;
+      // Final path cells — solid line if path_step events exist
+      if (simState.pathSet.size > 0) {
+        simState.pathSet.forEach((id) => {
+          const [sx, sy] = id.split(",").map(Number);
+          const px = sx * (cellSize + 1) + 1;
+          const py = sy * (cellSize + 1) + 1;
+          ctx.fillStyle = color + "66";
+          ctx.fillRect(px, py, cellSize, cellSize);
+        });
 
+        // Also draw the path as a connected line using activeMetric path order
+        if (pathCells.length > 0) {
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth   = Math.max(2, cellSize * 0.12);
+          ctx.lineCap     = "round";
+          ctx.lineJoin    = "round";
+          ctx.globalAlpha = 0.85;
+          pathCells.forEach(({ x, y }, i) => {
+            const px = x * (cellSize + 1) + 1 + cellSize / 2;
+            const py = y * (cellSize + 1) + 1 + cellSize / 2;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+    } else if (pathCells.length > 0) {
+      // ── static mode (no simulation run yet): just draw final path ──────
       ctx.beginPath();
-      ctx.arc(px, py, isFirst || isLast ? cellSize * 0.22 : cellSize * 0.12, 0, Math.PI * 2);
-      ctx.fillStyle = isFirst ? "var(--accent-teal)" : isLast ? "var(--accent-amber)" : color;
-      ctx.fill();
-    });
-  }, [pathCells, selectedAlgo, cellSize]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = Math.max(2, cellSize * 0.12);
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      ctx.globalAlpha = 0.75;
+      pathCells.forEach(({ x, y }, i) => {
+        const px = x * (cellSize + 1) + 1 + cellSize / 2;
+        const py = y * (cellSize + 1) + 1 + cellSize / 2;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      pathCells.forEach(({ x, y }, i) => {
+        const px = x * (cellSize + 1) + 1 + cellSize / 2;
+        const py = y * (cellSize + 1) + 1 + cellSize / 2;
+        const isFirst = i === 0;
+        const isLast  = i === pathCells.length - 1;
+        ctx.beginPath();
+        ctx.arc(px, py, isFirst || isLast ? cellSize * 0.22 : cellSize * 0.12, 0, Math.PI * 2);
+        ctx.fillStyle = isFirst ? "#1d9e75" : isLast ? "#ef9f27" : color;
+        ctx.fill();
+      });
+    }
+  }, [simState, pathCells, selectedAlgo, cellSize, hasSimulation]);
 
   // Mouse handlers for tooltip
   const handleMouseMove = useCallback(
@@ -307,38 +377,18 @@ export function GridView() {
                   );
                 })}
 
-		{/* Animated Robot / Current Event Overlay */}
-              {(() => {
-                // Grab the event at the current playback cursor
-                const currentEvent = events[playback.cursor];
-                
-                // If the event has coordinates (e.g., node_explored, robot_moved)
-                if (currentEvent && 'x' in currentEvent && 'y' in currentEvent) {
-                  const ev = currentEvent as { x: number; y: number };
-                  const px = ev.x * (cellSize + 1) + 1 + cellSize / 2;
-                  const py = ev.y * (cellSize + 1) + 1 + cellSize / 2;
-                  
-                  return (
-                    <g style={{ transition: "all 0.15s ease-out" }}>
-                      {/* A pulsing halo */}
-                      <circle 
-                        cx={px} cy={py} 
-                        r={cellSize * 0.4} 
-                        fill={ALGORITHM_COLOR[selectedAlgo]} 
-                        opacity="0.3" 
-                      />
-                      {/* The core robot/node marker */}
-                      <circle 
-                        cx={px} cy={py} 
-                        r={cellSize * 0.2} 
-                        fill={ALGORITHM_COLOR[selectedAlgo]} 
-                        stroke="#fff"
-                        strokeWidth="2"
-                      />
-                    </g>
-                  );
-                }
-                return null;
+		{/* Robot marker — tracks the last expanded node */}
+              {simState.robotPos && (() => {
+                const { x, y } = simState.robotPos;
+                const px = x * (cellSize + 1) + 1 + cellSize / 2;
+                const py = y * (cellSize + 1) + 1 + cellSize / 2;
+                const color = ALGORITHM_COLOR[selectedAlgo];
+                return (
+                  <g style={{ transition: "all 0.12s ease-out" }}>
+                    <circle cx={px} cy={py} r={cellSize * 0.38} fill={color} opacity="0.22"/>
+                    <circle cx={px} cy={py} r={cellSize * 0.2} fill={color} stroke="#fff" strokeWidth="1.5"/>
+                  </g>
+                );
               })()}
             
 	      </svg>
