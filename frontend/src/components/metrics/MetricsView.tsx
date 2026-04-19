@@ -232,6 +232,11 @@ export function MetricsView() {
                 </div>
               );
             })}
+
+            {/* ── Totals summary row ───────────────────────────────────── */}
+            {/* Sums across ALL deliveries for each algo — gives a single
+                at-a-glance comparison of overall algorithm performance.    */}
+            <TotalsRow metrics={metrics} />
           </div>
         </div>
 
@@ -316,6 +321,128 @@ export function MetricsView() {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+// Totals row — shows per-algorithm sums across ALL deliveries at the bottom
+// of the comparison table. Each algorithm gets one summarised cell so you
+// can compare overall performance at a glance without switching delivery tabs.
+function TotalsRow({ metrics }: { metrics: any[] }) {
+  type AlgoTotals = {
+    id: AlgorithmId;
+    totalCost:  number;
+    totalNodes: number;
+    totalSteps: number;
+    totalTime:  number;
+    foundCount: number;
+    rowCount:   number;
+  };
+
+  const totals = useMemo<AlgoTotals[]>(() => {
+    return ALGORITHM_IDS.map((id) => {
+      const rows  = metrics.filter((m) => m.algorithm_id === id);
+      const found = rows.filter((m) => m.path_found);
+      return {
+        id,
+        totalCost:  found.reduce((s, m) => s + m.path_cost, 0),
+        totalNodes: rows.reduce((s, m) => s + m.nodes_explored, 0),
+        totalSteps: found.reduce((s, m) => s + m.path_length, 0),
+        totalTime:  rows.reduce((s, m) => s + m.execution_time_ms, 0),
+        foundCount: found.length,
+        rowCount:   rows.length,
+      };
+    });
+  }, [metrics]);
+
+  const validTotals  = totals.filter((t) => t.rowCount > 0);
+  const allComplete  = validTotals.filter((t) => t.foundCount === t.rowCount);
+  const lowestCost   = allComplete.length
+    ? Math.min(...allComplete.map((t) => t.totalCost))
+    : Infinity;
+
+  if (validTotals.length === 0) return null;
+
+  return (
+    <>
+      {/* Section divider label */}
+      <div
+        style={{
+          gridColumn:    "1 / -1",
+          padding:       "6px 14px 4px",
+          fontSize:      "9px",
+          fontWeight:    700,
+          color:         "var(--text-muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          background:    "var(--bg-raised)",
+          borderTop:     "2px solid var(--border-default)",
+        }}
+      >
+        Totals — all {DELIVERIES.length} deliveries
+      </div>
+
+      {/* One row per algorithm, same grid as data rows */}
+      {totals.map((t) => {
+        if (t.rowCount === 0) return null;
+        const isBest = t.foundCount === t.rowCount && t.totalCost === lowestCost;
+        return (
+          <div
+            key={t.id}
+            style={{
+              display:             "grid",
+              gridTemplateColumns: "160px 90px 90px 80px 80px 70px",
+              padding:             "8px 14px",
+              borderTop:           "1px solid var(--border-subtle)",
+              background:          isBest ? `${ALGORITHM_COLOR[t.id]}06` : "var(--bg-raised)",
+              alignItems:          "center",
+            }}
+          >
+            {/* Name */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{
+                  width:        "6px",
+                  height:       "6px",
+                  borderRadius: "50%",
+                  background:   ALGORITHM_COLOR[t.id],
+                  flexShrink:   0,
+                  opacity:      0.7,
+                }}
+              />
+              <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                {ALGORITHM_SHORT[t.id]}
+              </span>
+            </div>
+
+            {/* Total cost — only paths found */}
+            <MonoCell
+              value={t.foundCount > 0 ? formatCost(t.totalCost) : "—"}
+              highlight={isBest}
+              color={ALGORITHM_COLOR[t.id]}
+            />
+            {/* Total nodes explored */}
+            <MonoCell value={formatCount(t.totalNodes)} />
+            {/* Total steps */}
+            <MonoCell value={t.foundCount > 0 ? formatCount(t.totalSteps) : "—"} />
+            {/* Total time */}
+            <MonoCell value={formatTime(t.totalTime)} />
+            {/* Paths found ratio */}
+            <div>
+              <StatusPill
+                color={
+                  t.foundCount === t.rowCount ? "var(--accent-green)"
+                  : t.foundCount === 0        ? "var(--accent-red)"
+                  :                             "var(--accent-amber)"
+                }
+              >
+                {t.foundCount}/{t.rowCount}
+              </StatusPill>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 
 function EmptyMetrics() {
   return (

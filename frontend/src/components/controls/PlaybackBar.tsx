@@ -1,9 +1,14 @@
 // src/components/controls/PlaybackBar.tsx
 // Playback timeline bar — scrubs through the event buffer.
 // Auto-advances with useInterval at PLAYBACK_STEP_MS / speed cadence.
+//
+// The scrub range and counter reflect the active (algo:delivery) segment so
+// users see progress for the pair they're currently watching, not the full
+// interleaved event buffer. The underlying cursor stays in flat-event space
+// (matching what GridView's segmentCursor derivation expects).
 
-import { useEffect, useRef } from "react";
-import { usePlayback, useStore, useRunStatus } from "@/store";
+import { useEffect, useRef, useMemo } from "react";
+import { usePlayback, useStore, useRunStatus, useActiveAlgorithm, useActiveDelivery } from "@/store";
 import { PLAYBACK_STEP_MS } from "@/lib/constants";
 
 export function PlaybackBar() {
@@ -12,9 +17,49 @@ export function PlaybackBar() {
   const store       = useStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const activeAlgo     = useActiveAlgorithm();
+  const activeDelivery = useActiveDelivery();
+
+  // Flat event array — needed to compute segment-local progress
+  const flatEvents = useStore((s) => s.events);
+  const segmentKey = `${activeAlgo}:${activeDelivery}`;
+
+  // Compute the index in the flat buffer of the last event for this segment.
+  // This becomes the scrub-bar's max value so the track fills exactly when
+  // all segment events have been played.
+  const segmentTotal = useMemo(() => {
+    let count = 0;
+    for (let i = 0; i < flatEvents.length; i++) {
+      const ev = flatEvents[i] as any;
+      if (
+        ev &&
+        typeof ev.algorithm_id === "string" &&
+        typeof ev.delivery_id  === "string" &&
+        `${ev.algorithm_id}:${ev.delivery_id}` === segmentKey
+      ) count++;
+    }
+    return count;
+  }, [flatEvents, segmentKey]);
+
+  // How many segment events have been consumed up to the current cursor
+  const segmentCursor = useMemo(() => {
+    let count = 0;
+    for (let i = 0; i <= playback.cursor && i < flatEvents.length; i++) {
+      const ev = flatEvents[i] as any;
+      if (
+        ev &&
+        typeof ev.algorithm_id === "string" &&
+        typeof ev.delivery_id  === "string" &&
+        `${ev.algorithm_id}:${ev.delivery_id}` === segmentKey
+      ) count++;
+    }
+    return count;
+  }, [flatEvents, playback.cursor, segmentKey]);
+
   const { cursor, total, playing, speed } = playback;
 
-  // Auto-advance timer
+  // Auto-advance timer — still advances the flat cursor; GridView derives its
+  // own segment-local position from that, keeping everything in sync.
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (!playing || total === 0) return;
@@ -33,7 +78,8 @@ export function PlaybackBar() {
   // Don't render when no events
   if (total === 0 && runStatus === "idle") return null;
 
-  const pct = total > 1 ? (cursor / (total - 1)) * 100 : 0;
+  // Segment-scoped progress percentage for the visual fill
+  const pct = segmentTotal > 1 ? (segmentCursor / segmentTotal) * 100 : 0;
 
   return (
     <div
@@ -83,7 +129,7 @@ export function PlaybackBar() {
         </svg>
       </button>
 
-      {/* Scrub slider */}
+      {/* Scrub slider — range covers the full flat buffer but fill reflects segment */}
       <div style={{ flex: 1, position: "relative", height: "4px" }}>
         {/* Track */}
         <div
@@ -94,7 +140,7 @@ export function PlaybackBar() {
             borderRadius: "2px",
           }}
         />
-        {/* Fill */}
+        {/* Segment fill */}
         <div
           style={{
             position:     "absolute",
@@ -128,17 +174,20 @@ export function PlaybackBar() {
         />
       </div>
 
-      {/* Counter */}
+      {/* Counter — segment-scoped */}
       <span
         style={{
           fontFamily: "var(--font-mono)",
           fontSize:   "10px",
           color:      "var(--text-muted)",
-          minWidth:   "60px",
+          minWidth:   "80px",
           textAlign:  "right",
         }}
       >
-        {cursor} / {total}
+        {segmentCursor} / {segmentTotal}
+        {total !== segmentTotal && (
+          <span style={{ opacity: 0.45 }}> ({total})</span>
+        )}
       </span>
 
       {/* Speed selector */}
@@ -196,3 +245,5 @@ const iconBtnStyle: React.CSSProperties = {
   flexShrink:   0,
   transition:   "all 120ms",
 };
+
+
