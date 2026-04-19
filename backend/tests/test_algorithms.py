@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.algorithms import ALGORITHM_REGISTRY, get_runner
+from backend.algorithms.algorithms_registry import ALGORITHM_REGISTRY, get_runner
 from backend.engine.event_bus import EventBus
 from backend.engine.grid_builder import GridBuilder
 from backend.engine.profile_manager import ProfileManager

@@ -2,7 +2,7 @@
 
 from collections import deque
 
-from algorithms.base_runner import BaseRunner
+from backend.algorithms.base_runner import BaseRunner
 
 
 class DFSRunner(BaseRunner):

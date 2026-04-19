@@ -9,7 +9,7 @@ from typing import Optional
 
 import jsonschema
 
-from common.constants import (
+from backend.common.constants import (
     GRID_HEIGHT,
     GRID_WIDTH,
     MAX_OBSTACLE_FRACTION,
@@ -17,7 +17,7 @@ from common.constants import (
     SCHEMA_VERSION,
     TRAFFIC_ZONE_FRACTION,
 )
-from engine.grid_builder import GridBuilder, GridBuilderError
+from backend.engine.grid_builder import GridBuilder, GridBuilderError
 
 # ── paths ──────────────────────────────────────────────────────────────────────
 PROFILES_DIR = Path(__file__).parent.parent / "profiles"

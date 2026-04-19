@@ -2,8 +2,8 @@
 
 import pytest
 
-from engine.grid_builder import GridBuilder
-from engine.profile_manager import ProfileManager, ProfileManagerError
+from backend.engine.grid_builder import GridBuilder
+from backend.engine.profile_manager import ProfileManager, ProfileManagerError
 
 
 @pytest.fixture
