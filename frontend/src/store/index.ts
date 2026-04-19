@@ -37,6 +37,13 @@ import type {
 } from "@/types";
 import { PLAYBACK_STEP_MS } from "@/lib/constants";
 
+// ── segmented event store key ──────────────────────────────────────────────
+// Produces the canonical key used to index eventsBySegment.
+// Must be kept in sync with the graph key convention: "${algo}:${delivery}".
+export function segmentKey(algorithmId: AlgorithmId, deliveryId: string): string {
+  return `${algorithmId}:${deliveryId}`;
+}
+
 // ── store shape ────────────────────────────────────────────────────────────
 
 interface SimStore {
@@ -59,6 +66,12 @@ interface SimStore {
   // Playback scrubs through this array.
   events: ServerEvent[];
 
+  // ── segmented event store ────────────────────────────────────────────────
+  // Events bucketed by "${algorithm_id}:${delivery_id}" so each (algo, delivery)
+  // pair has its own ordered list. Eliminates O(n) linear scans in GridView
+  // and any other consumer that only cares about one pair at a time.
+  eventsBySegment: Record<string, ServerEvent[]>;
+
   // ── playback ────────────────────────────────────────────────────────────
   playback: PlaybackState;
 
@@ -73,6 +86,7 @@ interface SimStore {
   activeView:      ActiveView;
   inspectorOpen:   boolean;
   activeDelivery:  string;  // "D1" … "D5" — which delivery tab is shown
+  activeAlgorithm: AlgorithmId; // synced algorithm selection across all views
 
   // ── actions ─────────────────────────────────────────────────────────────
 
@@ -112,6 +126,7 @@ interface SimStore {
   setActiveView:     (view: ActiveView) => void;
   setInspectorOpen:  (open: boolean) => void;
   setActiveDelivery: (id: string) => void;
+  setActiveAlgorithm: (id: AlgorithmId) => void;
 }
 
 // ── initial algorithm states ───────────────────────────────────────────────
@@ -143,17 +158,19 @@ export const useStore = create<SimStore>((set, get) => ({
   algorithmStates: initialAlgorithmStates(),
   graphs:          {},
   events:          [],
+  eventsBySegment: {},
   playback: {
     cursor:  0,
     total:   0,
     playing: false,
     speed:   1,
   },
-  selectedNode:   null,
-  metrics:        [],
-  activeView:     "grid",
-  inspectorOpen:  false,
-  activeDelivery: "D1",
+  selectedNode:    null,
+  metrics:         [],
+  activeView:      "grid",
+  inspectorOpen:   false,
+  activeDelivery:  "D1",
+  activeAlgorithm: "astar",
 
   // ── WebSocket / connection ────────────────────────────────────────────────
   setConnected: (connected) => set({ connected }),
@@ -169,6 +186,7 @@ export const useStore = create<SimStore>((set, get) => ({
       runStatus:       "idle",
       graphs:          {},
       events:          [],
+      eventsBySegment: {},
       metrics:         [],
       selectedNode:    null,
       inspectorOpen:   false,
@@ -191,11 +209,35 @@ export const useStore = create<SimStore>((set, get) => ({
   ingestEvent: (event) => {
     const type = event.event_type;
 
-    // Always append to the event buffer for playback
+    // Always append to the flat event buffer for playback
     set((s) => ({
       events: [...s.events, event],
       playback: { ...s.playback, total: s.events.length + 1 },
     }));
+
+    // ── segment bucketing ────────────────────────────────────────────────
+    // Any event carrying both algorithm_id and delivery_id gets appended
+    // to its (algo:delivery) segment so GridView and other consumers can
+    // read only the events relevant to the currently selected pair.
+    const ev = event as Record<string, unknown>;
+    if (
+      typeof ev["algorithm_id"] === "string" &&
+      typeof ev["delivery_id"] === "string"
+    ) {
+      const key = segmentKey(
+        ev["algorithm_id"] as AlgorithmId,
+        ev["delivery_id"] as string
+      );
+      set((s) => {
+        const existing = s.eventsBySegment[key] ?? [];
+        return {
+          eventsBySegment: {
+            ...s.eventsBySegment,
+            [key]: [...existing, event],
+          },
+        };
+      });
+    }
 
     // Route to specific state updates
     if (type === "algorithm_start" && "algorithm_id" in event) {
@@ -309,9 +351,10 @@ export const useStore = create<SimStore>((set, get) => ({
     })),
 
   // ── ui ───────────────────────────────────────────────────────────────────
-  setActiveView:     (activeView)     => set({ activeView }),
-  setInspectorOpen:  (inspectorOpen)  => set({ inspectorOpen }),
-  setActiveDelivery: (activeDelivery) => set({ activeDelivery }),
+  setActiveView:      (activeView)      => set({ activeView }),
+  setInspectorOpen:   (inspectorOpen)   => set({ inspectorOpen }),
+  setActiveDelivery:  (activeDelivery)  => set({ activeDelivery }),
+  setActiveAlgorithm: (activeAlgorithm) => set({ activeAlgorithm }),
 }));
 
 // ── convenience selector hooks ─────────────────────────────────────────────
@@ -330,5 +373,13 @@ export const usePlayback       = () => useStore((s) => s.playback);
 export const useActiveView     = () => useStore((s) => s.activeView);
 export const useInspectorOpen  = () => useStore((s) => s.inspectorOpen);
 export const useActiveDelivery = () => useStore((s) => s.activeDelivery);
+export const useActiveAlgorithm = () => useStore((s) => s.activeAlgorithm);
 export const useAlgorithmStates = () => useStore((s) => s.algorithmStates);
 export const useEvents         = () => useStore((s) => s.events);
+
+// Returns the event segment for a specific (algo, delivery) pair.
+// Components call this with a stable selector to avoid re-renders when
+// other segments change.
+const EMPTY_SEGMENT: ServerEvent[] = [];
+export const useSegmentEvents = (algorithmId: AlgorithmId, deliveryId: string) =>
+  useStore((s) => s.eventsBySegment[segmentKey(algorithmId, deliveryId)] ?? EMPTY_SEGMENT);

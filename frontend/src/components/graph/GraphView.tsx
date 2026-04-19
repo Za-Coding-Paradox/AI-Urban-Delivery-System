@@ -8,7 +8,7 @@ import { Suspense, useRef, useState, useMemo } from "react";
 import { Canvas, useFrame, useThree }          from "@react-three/fiber";
 import { OrbitControls, Html, Line }            from "@react-three/drei";
 import * as THREE                               from "three";
-import { useGraphs, useStore, useMetrics }      from "@/store";
+import { useGraphs, useStore, useMetrics, useActiveAlgorithm, useActiveDelivery } from "@/store";
 import {
   ALGORITHM_IDS, ALGORITHM_SHORT, ALGORITHM_COLOR,
   NODE_STATUS_COLORS, EDGE_COLORS,
@@ -26,8 +26,12 @@ export function GraphView() {
   const store     = useStore();
   const selectedNode = useStore((s) => s.selectedNode);
 
-  const [selectedAlgo,     setSelectedAlgo]     = useState<AlgorithmId>("astar");
-  const [selectedDelivery, setSelectedDelivery]  = useState("D1");
+  // Synced with store — shared across GridView and GraphView
+  const selectedAlgo     = useActiveAlgorithm();
+  const setSelectedAlgo  = useStore((s) => s.setActiveAlgorithm);
+  const selectedDelivery = useActiveDelivery();
+  const setSelectedDelivery = useStore((s) => s.setActiveDelivery);
+
   const [showFrontier,     setShowFrontier]      = useState(true);
   const [showExpanded,     setShowExpanded]      = useState(true);
   const [showEdges,        setShowEdges]         = useState(true);

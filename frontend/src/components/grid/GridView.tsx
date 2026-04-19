@@ -7,6 +7,7 @@ import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import {
   useGridCells, useStore, useRunStatus, useMetrics,
   useAlgorithmStates, useActiveDelivery, usePlayback,
+  useActiveAlgorithm, useSegmentEvents,
 } from "@/store";
 import {
   CELL_COLORS, CELL_BORDER_COLORS, ALGORITHM_COLOR,
@@ -23,15 +24,21 @@ export function GridView() {
   const algorithmStates = useAlgorithmStates();
   const activeDelivery = useActiveDelivery();
   const playback       = usePlayback();
-  const events            = useStore((s) => s.events);
-  const setActiveDelivery = useStore((s) => s.setActiveDelivery);
+  const setActiveDelivery  = useStore((s) => s.setActiveDelivery);
+
+  // activeAlgorithm is now global store state — synced across all views
+  const selectedAlgo       = useActiveAlgorithm();
+  const setSelectedAlgo    = useStore((s) => s.setActiveAlgorithm);
+
+  // Read only the events for the currently active (algo, delivery) pair.
+  // This is an O(1) lookup instead of the previous O(n) scan over all events.
+  const segmentEvents = useSegmentEvents(selectedAlgo, activeDelivery);
 
   const canvasRef      = useRef<HTMLCanvasElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
   const [cellSize, setCellSize] = useState(0);
   const [hoveredCell, setHoveredCell] = useState<Cell | null>(null);
   const [mousePos, setMousePos]       = useState({ x: 0, y: 0 });
-  const [selectedAlgo, setSelectedAlgo] = useState<AlgorithmId>("astar");
 
   // Derive metric for selected algorithm + delivery
   const activeMetric: MetricsSummary | null = useMemo(() => {
@@ -41,17 +48,17 @@ export function GridView() {
   }, [metrics, selectedAlgo, activeDelivery]);
 
   // ── simulation state derived from playback cursor ──────────────────────────
-  // Walk all events up to the current cursor for the selected algorithm.
-  // Accumulate sets of visited/frontier/path cells and the robot's position.
+  // Walk segmentEvents up to the current cursor — already filtered to this
+  // (algo, delivery) pair, so no per-event algorithm_id check is needed.
   const simState = useMemo(() => {
     const visited  = new Set<string>();
     const frontier = new Set<string>();
     const pathSet  = new Set<string>();
     let   robotPos: { x: number; y: number } | null = null;
 
-    for (let i = 0; i <= playback.cursor && i < events.length; i++) {
-      const ev = events[i] as any;
-      if (!ev || ev.algorithm_id !== selectedAlgo) continue;
+    for (let i = 0; i <= playback.cursor && i < segmentEvents.length; i++) {
+      const ev = segmentEvents[i] as any;
+      if (!ev) continue;
 
       if (ev.event_type === "node_visit" && ev.node) {
         frontier.add(ev.node.id);
@@ -64,10 +71,10 @@ export function GridView() {
       }
     }
     return { visited, frontier, pathSet, robotPos };
-  }, [events, playback.cursor, selectedAlgo]);
+  }, [segmentEvents, playback.cursor]);
 
-  // Whether any simulation events exist (i.e. a run has been started)
-  const hasSimulation = events.some((ev: any) => ev.algorithm_id === selectedAlgo);
+  // Whether any simulation events exist for this (algo, delivery) pair
+  const hasSimulation = segmentEvents.length > 0;
 
   // Resize observer
   useEffect(() => {

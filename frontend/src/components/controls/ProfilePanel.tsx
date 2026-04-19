@@ -11,7 +11,7 @@ import { ALGORITHM_IDS, ALGORITHM_LABELS, ALGORITHM_COLOR, ALGORITHM_OPTIMAL } f
 import type { AlgorithmId } from "@/types";
 
 export function ProfilePanel() {
-  const { generateProfile, startRun, resetRun, loading, error } = useSimulation();
+  const { generateProfile, startRun, resetRun, saveProfile, listProfiles, loading, error } = useSimulation();
   const profile        = useProfile();
   const runStatus      = useRunStatus();
   const algorithmStates = useAlgorithmStates();
@@ -23,16 +23,14 @@ export function ProfilePanel() {
     new Set(ALGORITHM_IDS)
   );
   const [savedProfiles, setSavedProfiles] = useState<string[]>([]);
+  const [saveStatus, setSaveStatus]       = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const isRunning = runStatus === "running" || runStatus === "pending";
 
-  // Load saved profiles list on mount
+  // Load saved profiles list via useSimulation (not raw fetch)
   useEffect(() => {
-    fetch("/api/profiles")
-      .then((r) => r.json())
-      .then((d) => setSavedProfiles(d.profiles ?? []))
-      .catch(() => {});
-  }, []);
+    listProfiles().then((profiles) => setSavedProfiles(profiles));
+  }, [listProfiles]);
 
   function toggleAlgo(id: AlgorithmId) {
     setEnabledAlgos((prev) => {
@@ -48,10 +46,27 @@ export function ProfilePanel() {
   }
 
   async function handleLoadProfile(name: string) {
-    await fetch(`/api/profiles/${name}`)
+    const loaded = await fetch(`/api/profiles/${name}`)
       .then((r) => r.json())
-      .then((d) => store.setProfile(d.profile))
-      .catch(() => {});
+      .then((d) => d.profile)
+      .catch(() => null);
+    if (loaded) store.setProfile(loaded);
+  }
+
+  async function handleSaveProfile() {
+    if (!profile) return;
+    const name = profileName.trim() || profile.meta.name || profile.meta.id;
+    setSaveStatus("saving");
+    const ok = await saveProfile(name, profile);
+    if (ok) {
+      setSaveStatus("saved");
+      // Refresh the saved-profiles dropdown
+      listProfiles().then((profiles) => setSavedProfiles(profiles));
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } else {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
   }
 
   async function handleRun() {
@@ -112,13 +127,39 @@ export function ProfilePanel() {
           </div>
 
           <Label>Name (optional)</Label>
-          <input
-            type="text"
-            placeholder="my_city"
-            value={profileName}
-            onChange={(e) => setProfileName(e.target.value)}
-            style={{ ...inputStyle, marginBottom: "8px" }}
-          />
+          <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+            <input
+              type="text"
+              placeholder="my_city"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              style={inputStyle}
+            />
+            <button
+              onClick={handleSaveProfile}
+              disabled={!profile || saveStatus === "saving"}
+              title="Save current profile to disk"
+              style={{
+                ...secondaryBtnStyle,
+                width:      "auto",
+                padding:    "6px 10px",
+                flexShrink: 0,
+                color:
+                  saveStatus === "saved" ? "var(--accent-teal)"
+                  : saveStatus === "error" ? "var(--accent-red)"
+                  : "var(--text-secondary)",
+                borderColor:
+                  saveStatus === "saved" ? "var(--accent-teal)"
+                  : saveStatus === "error" ? "var(--accent-red)"
+                  : "var(--border-default)",
+              }}
+            >
+              {saveStatus === "saving" ? "…"
+               : saveStatus === "saved"  ? "✓"
+               : saveStatus === "error"  ? "✗"
+               : "Save"}
+            </button>
+          </div>
 
           {savedProfiles.length > 0 && (
             <>
