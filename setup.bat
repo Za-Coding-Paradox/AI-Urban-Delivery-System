@@ -39,8 +39,8 @@ if errorlevel 1 (
 for /f "tokens=2" %%v in ('!PYTHON! --version 2^>^&1') do set PYVER=%%v
 echo [OK] Python !PYVER!
 
-:: ── Check Node ───────────────────────────────────────────────────────────────
-echo [2/8] Checking Node.js 18+...
+:: ── Check Node & PNPM ────────────────────────────────────────────────────────
+echo [2/8] Checking Node.js 18+ and pnpm...
 node --version >nul 2>&1
 if errorlevel 1 (
     echo [FAIL] Node.js not found. Download from https://nodejs.org
@@ -48,6 +48,13 @@ if errorlevel 1 (
 )
 for /f %%v in ('node --version') do set NODEVER=%%v
 echo [OK] Node.js !NODEVER!
+
+call pnpm --version >nul 2>&1
+if errorlevel 1 (
+    echo [FAIL] pnpm not found. Please run 'npm install -g pnpm'
+    pause & exit /b 1
+)
+echo [OK] pnpm found
 
 :: ── Virtual environment ───────────────────────────────────────────────────────
 echo [3/8] Setting up Python virtual environment...
@@ -68,24 +75,27 @@ echo [OK] pip upgraded
 
 :: ── Python dependencies ───────────────────────────────────────────────────────
 echo [5/8] Installing Python dependencies...
-pip install -r requirements.txt --quiet
+pip install -r backend\requirements.txt --quiet
 if errorlevel 1 (
-    echo [FAIL] pip install failed. Check requirements.txt
+    echo [FAIL] pip install failed. Check backend\requirements.txt
     pause & exit /b 1
 )
 echo [OK] Python packages installed
 
 :: ── Node dependencies ─────────────────────────────────────────────────────────
-echo [6/8] Installing Node.js dependencies...
-if exist "package-lock.json" (
-    npm ci --silent
+echo [6/8] Installing Node.js dependencies (frontend)...
+cd frontend
+if exist "pnpm-lock.yaml" (
+    call pnpm install --frozen-lockfile --silent
 ) else (
-    npm install --silent
+    call pnpm install --silent
 )
 if errorlevel 1 (
-    echo [FAIL] npm install failed
+    echo [FAIL] pnpm install failed
+    cd ..
     pause & exit /b 1
 )
+cd ..
 echo [OK] Node.js packages installed
 
 :: ── Directory structure ───────────────────────────────────────────────────────
@@ -119,15 +129,18 @@ except Exception as e:
 :: ── Production build ─────────────────────────────────────────────────────────
 if "%MODE%"=="prod" (
     echo [8/8] Building frontend for production...
-    npm run build
+    cd frontend
+    call pnpm run build
     if errorlevel 1 (
-        echo [FAIL] npm run build failed
+        echo [FAIL] pnpm run build failed
+        cd ..
         pause & exit /b 1
     )
-    echo [OK] Frontend built to dist/
+    cd ..
+    echo [OK] Frontend built to frontend\dist\
 
     :: Copy dist to backend/static
-    xcopy /E /I /Y dist\* backend\static\ >nul
+    xcopy /E /I /Y frontend\dist\* backend\static\ >nul
     echo [OK] Assets deployed to backend\static\
 ) else (
     echo [8/8] Skipping production build (dev mode)
@@ -136,22 +149,25 @@ if "%MODE%"=="prod" (
 :: ── Run tests ─────────────────────────────────────────────────────────────────
 echo.
 echo [Tests] Running backend test suite...
-!PYTHON! -m pytest backend\tests\ -q --tb=short 2>&1 | tail /n 5
+!PYTHON! -m pytest backend\tests\ -q --tb=short 2>&1
 echo.
 
 :: ── Write launch scripts ──────────────────────────────────────────────────────
 echo @echo off > run_backend.bat
 echo call .venv\Scripts\activate.bat >> run_backend.bat
+echo set PYTHONPATH=%%cd%% >> run_backend.bat
 echo uvicorn backend.websocket.web_server:app --reload --host 0.0.0.0 --port 8000 >> run_backend.bat
 echo [OK] run_backend.bat created
 
 echo @echo off > run_frontend.bat
-echo npm run dev >> run_frontend.bat
+echo cd frontend >> run_frontend.bat
+echo call pnpm run dev >> run_frontend.bat
 echo [OK] run_frontend.bat created
 
 if "%MODE%"=="prod" (
     echo @echo off > run_prod.bat
     echo call .venv\Scripts\activate.bat >> run_prod.bat
+    echo set PYTHONPATH=%%cd%% >> run_prod.bat
     echo uvicorn backend.websocket.web_server:app --host 0.0.0.0 --port 8000 >> run_prod.bat
     echo [OK] run_prod.bat created
 )

@@ -79,16 +79,16 @@ check_node() {
   ok "Node.js v$VER found"
 }
 
-check_npm() {
-  if ! command -v npm &>/dev/null; then
-    fail "npm not found. Install Node.js from https://nodejs.org"
+check_pnpm() {
+  if ! command -v pnpm &>/dev/null; then
+    fail "pnpm not found. Please install via 'npm install -g pnpm'"
   fi
-  ok "npm $(npm -v) found"
+  ok "pnpm $(pnpm -v) found"
 }
 
 check_python
 check_node
-check_npm
+check_pnpm
 
 if [ "$MODE" = "docker" ]; then
   if ! command -v docker &>/dev/null; then
@@ -132,19 +132,21 @@ ok "pip upgraded"
 
 # Install Python dependencies
 info "Installing Python dependencies…"
-pip install -r requirements.txt --quiet
+pip install -r backend/requirements.txt --quiet
 ok "Python dependencies installed"
 
 # ── Node.js dependencies ──────────────────────────────────────────────────────
 head "Setting up Node.js environment"
 
-if [ -f "package-lock.json" ]; then
-  info "Installing Node.js dependencies (npm ci)…"
-  npm ci --silent
+cd frontend
+if [ -f "pnpm-lock.yaml" ]; then
+  info "Installing Node.js dependencies (pnpm install --frozen-lockfile)…"
+  pnpm install --frozen-lockfile --silent
 else
-  info "Installing Node.js dependencies (npm install)…"
-  npm install --silent
+  info "Installing Node.js dependencies (pnpm install)…"
+  pnpm install --silent
 fi
+cd ..
 ok "Node.js dependencies installed"
 
 # ── schema files check ────────────────────────────────────────────────────────
@@ -177,6 +179,7 @@ done
 # ── generate default profiles ─────────────────────────────────────────────────
 head "Generating default city profiles"
 
+export PYTHONPATH="$SCRIPT_DIR"
 $PYTHON - <<'PYEOF'
 import sys
 sys.path.insert(0, '.')
@@ -203,14 +206,16 @@ PYEOF
 # ── frontend build (prod only) ────────────────────────────────────────────────
 if [ "$MODE" = "prod" ]; then
   head "Building frontend (production)"
-  info "Running npm run build…"
-  npm run build
+  info "Running pnpm run build…"
+  cd frontend
+  pnpm run build
+  cd ..
   ok "Frontend built"
 
   # Copy dist into backend/static
-  info "Copying dist/ → backend/static/"
+  info "Copying frontend/dist/ → backend/static/"
   rm -rf backend/static/*
-  cp -r dist/* backend/static/
+  cp -r frontend/dist/* backend/static/
   ok "Frontend assets deployed to backend/static/"
 
   # Patch web_server.py to mount StaticFiles if not already done
@@ -277,10 +282,11 @@ if [ "$MODE" = "dev" ]; then
   echo ""
   echo -e "  ${CYAN}Terminal 1 (backend):${RESET}"
   echo "    source .venv/bin/activate"
+  echo "    export PYTHONPATH=\$PWD"
   echo "    uvicorn backend.websocket.web_server:app --reload --port 8000"
   echo ""
   echo -e "  ${CYAN}Terminal 2 (frontend):${RESET}"
-  echo "    npm run dev"
+  echo "    cd frontend && pnpm run dev"
   echo ""
   echo -e "  ${CYAN}Then open:${RESET} http://localhost:5173"
   echo ""
@@ -290,10 +296,11 @@ if [ "$MODE" = "dev" ]; then
   read -r -t 10 LAUNCH || LAUNCH="n"
   if [[ "$LAUNCH" =~ ^[Yy]$ ]]; then
     source .venv/bin/activate
+    export PYTHONPATH=$PWD
     uvicorn backend.websocket.web_server:app --reload --port 8000 --log-level warning &
     BACKEND_PID=$!
     sleep 1
-    npm run dev &
+    cd frontend && pnpm run dev &
     FRONTEND_PID=$!
     ok "Backend PID: $BACKEND_PID"
     ok "Frontend PID: $FRONTEND_PID"
@@ -307,6 +314,7 @@ elif [ "$MODE" = "prod" ]; then
   echo -e "${BOLD}Production mode — start with:${RESET}"
   echo ""
   echo "    source .venv/bin/activate"
+  echo "    export PYTHONPATH=\$PWD"
   echo "    uvicorn backend.websocket.web_server:app --host 0.0.0.0 --port 8000"
   echo ""
   echo -e "  ${CYAN}Then open:${RESET} http://localhost:8000"
