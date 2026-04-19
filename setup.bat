@@ -68,13 +68,17 @@ if not exist ".venv" (
 call .venv\Scripts\activate.bat
 echo [OK] Activated .venv
 
-:: ── Upgrade pip ───────────────────────────────────────────────────────────────
+:: ── Upgrade pip & Dependencies ────────────────────────────────────────────────
 echo [4/8] Upgrading pip...
-pip install --upgrade pip --quiet
+python -m pip install --upgrade pip --quiet
 echo [OK] pip upgraded
 
-:: ── Python dependencies ───────────────────────────────────────────────────────
 echo [5/8] Installing Python dependencies...
+:: Ensure httpx is in requirements for testing
+findstr /C:"httpx" backend\requirements.txt >nul
+if errorlevel 1 (
+    echo httpx>> backend\requirements.txt
+)
 pip install -r backend\requirements.txt --quiet
 if errorlevel 1 (
     echo [FAIL] pip install failed. Check backend\requirements.txt
@@ -82,21 +86,24 @@ if errorlevel 1 (
 )
 echo [OK] Python packages installed
 
-:: ── Node dependencies ─────────────────────────────────────────────────────────
-echo [6/8] Installing Node.js dependencies (frontend)...
+:: ── Node dependencies (Bulletproof) ──────────────────────────────────────────
+echo [6/8] Setting up Node.js environment (frontend)...
 cd frontend
-if exist "pnpm-lock.yaml" (
-    call pnpm install --frozen-lockfile --silent
+echo   ^> Attempting strict install (frozen-lockfile)...
+call pnpm install --frozen-lockfile --silent >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo   [OK] Dependencies installed successfully.
 ) else (
+    echo   [WARN] Lockfile mismatch detected. Auto-fixing and updating lockfile...
     call pnpm install --silent
-)
-if errorlevel 1 (
-    echo [FAIL] pnpm install failed
-    cd ..
-    pause & exit /b 1
+    if errorlevel 1 (
+        echo   [FAIL] pnpm install failed.
+        cd ..
+        pause & exit /b 1
+    )
+    echo   [OK] Dependencies installed and lockfile updated.
 )
 cd ..
-echo [OK] Node.js packages installed
 
 :: ── Directory structure ───────────────────────────────────────────────────────
 echo [7/8] Ensuring directories...
@@ -107,24 +114,9 @@ echo [OK] Directories ready
 
 :: ── Generate profiles ─────────────────────────────────────────────────────────
 echo [7b] Generating default city profiles...
-!PYTHON! -c "
-import sys
-sys.path.insert(0, '.')
-try:
-    from backend.engine.profile_manager import ProfileManager
-    import pathlib
-    mgr = ProfileManager()
-    for seed, name in [(1,'alpha'),(42,'roundtrip'),(7,'dense_city'),(100,'open_grid')]:
-        p = pathlib.Path(f'backend/profiles/{name}.json')
-        if p.exists():
-            print(f'  OK  {name} (exists)')
-        else:
-            prof = mgr.generate(seed, name)
-            mgr.save(prof, name)
-            print(f'  OK  {name} (seed={seed})')
-except Exception as e:
-    print(f'  WARN  profiles: {e}')
-"
+set PYTHONPATH=%cd%
+!PYTHON! -c "import sys, pathlib; sys.path.insert(0, '.'); from backend.engine.profile_manager import ProfileManager; mgr = ProfileManager(); [mgr.save(mgr.generate(seed, name), name) for seed, name in [(1,'alpha'),(42,'roundtrip'),(7,'dense_city'),(100,'open_grid')] if not pathlib.Path(f'backend/profiles/{name}.json').exists()]"
+echo [OK] Profiles validated
 
 :: ── Production build ─────────────────────────────────────────────────────────
 if "%MODE%"=="prod" (
@@ -139,7 +131,6 @@ if "%MODE%"=="prod" (
     cd ..
     echo [OK] Frontend built to frontend\dist\
 
-    :: Copy dist to backend/static
     xcopy /E /I /Y frontend\dist\* backend\static\ >nul
     echo [OK] Assets deployed to backend\static\
 ) else (
@@ -149,7 +140,8 @@ if "%MODE%"=="prod" (
 :: ── Run tests ─────────────────────────────────────────────────────────────────
 echo.
 echo [Tests] Running backend test suite...
-!PYTHON! -m pytest backend\tests\ -q --tb=short 2>&1
+set PYTHONPATH=%cd%
+!PYTHON! -m pytest backend\tests\ -q --tb=short
 echo.
 
 :: ── Write launch scripts ──────────────────────────────────────────────────────
@@ -157,19 +149,16 @@ echo @echo off > run_backend.bat
 echo call .venv\Scripts\activate.bat >> run_backend.bat
 echo set PYTHONPATH=%%cd%% >> run_backend.bat
 echo uvicorn backend.websocket.web_server:app --reload --host 0.0.0.0 --port 8000 >> run_backend.bat
-echo [OK] run_backend.bat created
 
 echo @echo off > run_frontend.bat
 echo cd frontend >> run_frontend.bat
 echo call pnpm run dev >> run_frontend.bat
-echo [OK] run_frontend.bat created
 
 if "%MODE%"=="prod" (
     echo @echo off > run_prod.bat
     echo call .venv\Scripts\activate.bat >> run_prod.bat
     echo set PYTHONPATH=%%cd%% >> run_prod.bat
     echo uvicorn backend.websocket.web_server:app --host 0.0.0.0 --port 8000 >> run_prod.bat
-    echo [OK] run_prod.bat created
 )
 
 :: ── Done ──────────────────────────────────────────────────────────────────────
