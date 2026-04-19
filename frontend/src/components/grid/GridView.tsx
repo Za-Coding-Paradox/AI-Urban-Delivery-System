@@ -23,6 +23,7 @@ export function GridView() {
   const algorithmStates = useAlgorithmStates();
   const activeDelivery = useActiveDelivery();
   const playback       = usePlayback();
+  const events            = useStore((s) => s.events);
   const setActiveDelivery = useStore((s) => s.setActiveDelivery);
 
   const canvasRef      = useRef<HTMLCanvasElement>(null);
@@ -305,7 +306,42 @@ export function GridView() {
                     </g>
                   );
                 })}
-            </svg>
+
+		{/* Animated Robot / Current Event Overlay */}
+              {(() => {
+                // Grab the event at the current playback cursor
+                const currentEvent = events[playback.cursor];
+                
+                // If the event has coordinates (e.g., node_explored, robot_moved)
+                if (currentEvent && 'x' in currentEvent && 'y' in currentEvent) {
+                  const ev = currentEvent as { x: number; y: number };
+                  const px = ev.x * (cellSize + 1) + 1 + cellSize / 2;
+                  const py = ev.y * (cellSize + 1) + 1 + cellSize / 2;
+                  
+                  return (
+                    <g style={{ transition: "all 0.15s ease-out" }}>
+                      {/* A pulsing halo */}
+                      <circle 
+                        cx={px} cy={py} 
+                        r={cellSize * 0.4} 
+                        fill={ALGORITHM_COLOR[selectedAlgo]} 
+                        opacity="0.3" 
+                      />
+                      {/* The core robot/node marker */}
+                      <circle 
+                        cx={px} cy={py} 
+                        r={cellSize * 0.2} 
+                        fill={ALGORITHM_COLOR[selectedAlgo]} 
+                        stroke="#fff"
+                        strokeWidth="2"
+                      />
+                    </g>
+                  );
+                }
+                return null;
+              })()}
+            
+	      </svg>
           )}
 
           {/* Tooltip */}
