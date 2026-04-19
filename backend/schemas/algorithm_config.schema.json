@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AlgorithmConfig",
+  "type": "object",
+  "required": ["id", "enabled", "heuristic", "weight", "visualize"],
+  "properties": {
+    "id":        { "type": "string", "enum": ["bfs", "dfs", "ucs", "greedy", "astar"] },
+    "enabled":   { "type": "boolean" },
+    "heuristic": { "type": "string", "enum": ["manhattan", "euclidean", "none"] },
+    "weight":    { "type": "number", "minimum": 1.0 },
+    "visualize": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

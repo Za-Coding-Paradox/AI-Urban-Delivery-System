@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CityProfile",
+  "type": "object",
+  "required": ["meta", "grid", "robot", "deliveries", "algorithms"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["id", "name", "seed", "created_at", "version"],
+      "properties": {
+        "id":         { "type": "string" },
+        "name":       { "type": "string" },
+        "seed":       { "type": "integer" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "version":    { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "grid": {
+      "type": "object",
+      "required": ["width", "height", "cells"],
+      "properties": {
+        "width":  { "type": "integer", "const": 15 },
+        "height": { "type": "integer", "const": 15 },
+        "cells": {
+          "type": "array",
+          "minItems": 225,
+          "maxItems": 225,
+          "items": { "$ref": "#/definitions/Cell" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "robot":      { "$ref": "#/definitions/RobotConfig" },
+    "deliveries": { "$ref": "#/definitions/DeliverySequence" },
+    "algorithms": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/AlgorithmConfig" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Cell": {
+      "type": "object",
+      "required": ["id", "x", "y", "type", "cost", "passable"],
+      "properties": {
+        "id":       { "type": "string" },
+        "x":        { "type": "integer", "minimum": 0, "maximum": 14 },
+        "y":        { "type": "integer", "minimum": 0, "maximum": 14 },
+        "type":     { "type": "string", "enum": ["road", "traffic_zone", "obstacle", "delivery_point", "base_station"] },
+        "cost":     { "type": ["integer", "null"] },
+        "passable": { "type": "boolean" },
+        "label":    { "type": ["string", "null"] },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "RobotConfig": {
+      "type": "object",
+      "required": ["start", "movement", "cost_model", "tie_breaking"],
+      "properties": {
+        "start":        { "type": "object", "required": ["x","y"], "properties": { "x": {"type":"integer"}, "y": {"type":"integer"} } },
+        "movement":     { "type": "string", "enum": ["cardinal", "cardinal+diagonal"] },
+        "cost_model":   { "type": "string", "enum": ["edge_cost", "node_cost"] },
+        "tie_breaking": { "type": "string", "enum": ["first", "lower_h", "random"] }
+      },
+      "additionalProperties": false
+    },
+    "DeliverySequence": {
+      "type": "object",
+      "required": ["count", "destinations", "order"],
+      "properties": {
+        "count": { "type": "integer", "const": 5 },
+        "destinations": {
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "items": {
+            "type": "object",
+            "required": ["id","x","y","label"],
+            "properties": {
+              "id":    {"type":"string"},
+              "x":    {"type":"integer","minimum":0,"maximum":14},
+              "y":    {"type":"integer","minimum":0,"maximum":14},
+              "label":{"type":"string"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "order": { "type": "string", "enum": ["sequential"] }
+      },
+      "additionalProperties": false
+    },
+    "AlgorithmConfig": {
+      "type": "object",
+      "required": ["id","enabled","heuristic","weight","visualize"],
+      "properties": {
+        "id":        {"type":"string","enum":["bfs","dfs","ucs","greedy","astar"]},
+        "enabled":   {"type":"boolean"},
+        "heuristic": {"type":"string","enum":["manhattan","euclidean","none"]},
+        "weight":    {"type":"number","minimum":1.0},
+        "visualize": {"type":"boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

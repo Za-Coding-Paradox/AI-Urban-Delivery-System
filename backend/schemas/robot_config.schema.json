@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RobotConfig",
+  "type": "object",
+  "required": ["start", "movement", "cost_model", "tie_breaking"],
+  "properties": {
+    "start": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0, "maximum": 14 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 14 }
+      },
+      "additionalProperties": false
+    },
+    "movement":     { "type": "string", "enum": ["cardinal", "cardinal+diagonal"] },
+    "cost_model":   { "type": "string", "enum": ["edge_cost", "node_cost"] },
+    "tie_breaking": { "type": "string", "enum": ["first", "lower_h", "random"] }
+  },
+  "additionalProperties": false
+}

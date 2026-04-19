@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeliverySequence",
+  "type": "object",
+  "required": ["count", "destinations", "order"],
+  "properties": {
+    "count": { "type": "integer", "const": 5 },
+    "destinations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["id", "x", "y", "label"],
+        "properties": {
+          "id":    { "type": "string" },
+          "x":    { "type": "integer", "minimum": 0, "maximum": 14 },
+          "y":    { "type": "integer", "minimum": 0, "maximum": 14 },
+          "label": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "order": { "type": "string", "enum": ["sequential"] }
+  },
+  "additionalProperties": false
+}

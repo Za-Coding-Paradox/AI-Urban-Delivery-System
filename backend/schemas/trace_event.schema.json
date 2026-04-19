@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TraceEvent",
+  "type": "object",
+  "required": ["event_type", "step", "timestamp_ms", "algorithm_id"],
+  "properties": {
+    "event_type":     { "type": "string", "enum": ["node_visit", "node_expand", "path_found", "path_step", "delivery_complete"] },
+    "step":           { "type": "integer", "minimum": 0 },
+    "timestamp_ms":   { "type": "number", "minimum": 0 },
+    "algorithm_id":   { "type": "string", "enum": ["bfs", "dfs", "ucs", "greedy", "astar"] },
+    "node": {
+      "type": "object",
+      "required": ["id", "x", "y", "cell_type", "g", "h", "f", "depth", "status"],
+      "properties": {
+        "id":        { "type": "string" },
+        "x":         { "type": "integer" },
+        "y":         { "type": "integer" },
+        "cell_type": { "type": "string" },
+        "g":         { "type": "number" },
+        "h":         { "type": "number" },
+        "f":         { "type": "number" },
+        "depth":     { "type": "integer", "minimum": 0 },
+        "parent_id": { "type": ["string", "null"] },
+        "status":    { "type": "string", "enum": ["open", "closed", "path"] }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": ["object", "null"],
+      "required": ["from_id", "to_id", "edge_type", "cost"],
+      "properties": {
+        "from_id":   { "type": "string" },
+        "to_id":     { "type": "string" },
+        "edge_type": { "type": "string", "enum": ["expansion", "path", "backtrack"] },
+        "cost":      { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "frontier_size":  { "type": "integer", "minimum": 0 },
+    "visited_count":  { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

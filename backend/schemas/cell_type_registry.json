@@ -1,0 +1,32 @@
+{
+  "road": {
+    "passable": true,
+    "cost_range": [1, 5],
+    "color_token": "cell.road",
+    "display_name": "Road"
+  },
+  "traffic_zone": {
+    "passable": true,
+    "cost_range": [10, 20],
+    "color_token": "cell.traffic",
+    "display_name": "Traffic Zone"
+  },
+  "obstacle": {
+    "passable": false,
+    "cost_range": null,
+    "color_token": "cell.obstacle",
+    "display_name": "Building / Obstacle"
+  },
+  "delivery_point": {
+    "passable": true,
+    "cost_range": [1, 5],
+    "color_token": "cell.delivery",
+    "display_name": "Delivery Location"
+  },
+  "base_station": {
+    "passable": true,
+    "cost_range": [1, 3],
+    "color_token": "cell.base",
+    "display_name": "Base Station"
+  }
+}

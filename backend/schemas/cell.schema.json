@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cell",
+  "type": "object",
+  "required": ["id", "x", "y", "type", "cost", "passable"],
+  "properties": {
+    "id":       { "type": "string", "pattern": "^\\d+,\\d+$" },
+    "x":        { "type": "integer", "minimum": 0, "maximum": 14 },
+    "y":        { "type": "integer", "minimum": 0, "maximum": 14 },
+    "type":     { "type": "string", "enum": ["road", "traffic_zone", "obstacle", "delivery_point", "base_station"] },
+    "cost":     { "type": ["integer", "null"], "minimum": 0 },
+    "passable": { "type": "boolean" },
+    "label":    { "type": ["string", "null"] },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}
