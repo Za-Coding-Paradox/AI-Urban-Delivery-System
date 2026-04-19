@@ -193,9 +193,8 @@ export function GridView() {
           );
           return (
             <button
-	    <button
-	    key={d}
-	    onClick={() => setActiveDelivery(d)}
+              key={id}
+              onClick={() => setSelectedAlgo(id)}
               disabled={!hasMets}
               style={{
                 padding:      "3px 10px",
@@ -220,7 +219,7 @@ export function GridView() {
           {["D1", "D2", "D3", "D4", "D5"].map((d) => (
             <button
               key={d}
-              onClick={() => store.setActiveDelivery(d)}
+              onClick={() => setActiveDelivery(d)}
               style={{
                 padding:      "3px 8px",
                 borderRadius: "4px",
