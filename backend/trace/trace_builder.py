@@ -17,12 +17,12 @@ from typing import Callable
 
 from backend.engine.event_bus import EventBus
 
+
 # ── custom exception ───────────────────────────────────────────────────────────
 
 
 class TraceBuilderError(Exception):
     """Raised when the builder is used incorrectly or receives bad data."""
-
     pass
 
 
@@ -39,16 +39,11 @@ class StackTraceBuilder:
     completes to get the serialisable graph dict.
 
     ── design: subscriber pattern ─────────────────────────────────────────
-    The builder registers once with subscribe_all() then filters by
-    algorithm_id. This means multiple builders can coexist on the same bus —
-    one per algorithm running in parallel — without interfering.
-
-    Alternative: give each AlgorithmRunner a direct reference to a builder
-    and call builder.record(event) explicitly.
-    Pro of alternative: no EventBus coupling, cleaner data flow.
-    Con: the runner would have to know about the builder, coupling algorithm
-         logic to visualisation logic. The bus is the right decoupling point.
-    The subscriber pattern wins here.
+    The builder registers once with subscribe_all(). Because RunController
+    executes algorithms sequentially, only one builder is ever alive on the
+    bus at a time — the algorithm_id filter in _handle_event is therefore
+    not currently load-bearing, but is kept as an explicit documentation of
+    which algorithm this builder belongs to.
 
     ── design: node storage ───────────────────────────────────────────────
     Nodes are stored in a dict keyed by cell id ("x,y"). The same cell
@@ -58,14 +53,23 @@ class StackTraceBuilder:
 
     The status lifecycle is: open → closed → path (path is terminal,
     never downgraded). The 3D renderer renders one sphere per unique cell,
-    coloured by its final status. This gives a clean, readable graph even
-    on a large simulation.
+    coloured by its final status.
 
-    ── design: edge deduplication ────────────────────────────────────────
-    Edges are keyed by (from_id, to_id) tuple. The priority order is:
-    path > backtrack > expansion. A path edge overwrites an expansion edge
-    for the same node pair. This is the desired behaviour — path edges
-    should be visually dominant (thick line, fast particles) in the 3D graph.
+    ── design: edge history ───────────────────────────────────────────────
+    Edges are keyed by (from_id, to_id) tuple. Each edge stores its full
+    visit history — every time the algorithm traversed that directed pair,
+    the step number and cost are recorded.
+
+    This matters most for UCS and A*. When A* relaxes a node (finds a
+    cheaper path to it), it re-pushes the node and re-generates the edge
+    from its new parent. Without history, that relaxation event is silently
+    lost. With history, the Node Inspector Panel can show exactly when and
+    by how much each edge was relaxed — making A*'s behaviour inspectable.
+
+    The "current" cost and edge_type exposed to the renderer always reflect
+    the most recent visit (or "path" if the edge is on the final path).
+    Line thickness and particle density use visit_count so heavily-traversed
+    edges are visually prominent.
 
     ── scalability note ──────────────────────────────────────────────────
     A 15×15 grid with 5 deliveries produces at most 225 unique nodes per
@@ -77,22 +81,32 @@ class StackTraceBuilder:
 
     def __init__(self, algorithm_id: str, delivery_id: str, bus: EventBus):
         self._algorithm_id = algorithm_id
-        self._delivery_id = delivery_id
-        self._bus = bus
+        self._delivery_id  = delivery_id
+        self._bus          = bus
 
         # Node store: cell_id → TraceNode dict
         # Updated in-place as status progresses open → closed → path
         self._nodes: dict[str, dict] = {}
 
         # Edge store: (from_id, to_id) → TraceEdge dict
-        # Deduplicated — path edges overwrite lesser types
+        #
+        # Each entry holds:
+        #   from_id, to_id    — the directed pair
+        #   edge_type         — current type ("expansion" | "backtrack" | "path")
+        #   cost              — cost of the most recent visit
+        #   visit_count       — how many times this edge was traversed
+        #   history           — list of every visit: [{step, cost, edge_type}, ...]
+        #
+        # "current" values (edge_type, cost) reflect the most recent visit,
+        # except when edge_type is "path" — that is terminal and never changes.
+        # history is append-only and is frozen once edge_type becomes "path".
         self._edges: dict[tuple[str, str], dict] = {}
 
         # Running metadata — updated as events arrive so finalize() is O(1)
-        self._max_depth: int = 0
-        self._max_g: float = 0.0
-        self._max_f: float = 0.0
-        self._total_steps: int = 0
+        self._max_depth:   int   = 0
+        self._max_g:       float = 0.0
+        self._max_f:       float = 0.0
+        self._total_steps: int   = 0
 
         # Completion flag — set on delivery_complete
         self._complete: bool = False
@@ -137,6 +151,23 @@ class StackTraceBuilder:
         final graph. Call it mid-run for a partial graph (useful for
         the playback scrub bar showing partial trees).
 
+        Each edge in the output has this shape:
+            {
+                "from_id":     "2,4",
+                "to_id":       "3,4",
+                "edge_type":   "path",        # current / final type
+                "cost":        2,             # cost of most recent visit
+                "visit_count": 3,             # how many times traversed
+                "history": [                  # every visit in order
+                    {"step": 4,  "cost": 5, "edge_type": "expansion"},
+                    {"step": 11, "cost": 3, "edge_type": "expansion"},
+                    {"step": 19, "cost": 2, "edge_type": "expansion"},
+                ]
+            }
+
+        The renderer uses edge_type for line style, visit_count for line
+        thickness, cost for particle density, and history for the inspector.
+
         Raises TraceBuilderError if called before any events arrived —
         this indicates a usage error (builder created but algorithm
         was never started, or visualize=False in AlgorithmConfig).
@@ -151,17 +182,17 @@ class StackTraceBuilder:
 
         return {
             "algorithm_id": self._algorithm_id,
-            "delivery_id": self._delivery_id,
-            "nodes": list(self._nodes.values()),
-            "edges": list(self._edges.values()),
+            "delivery_id":  self._delivery_id,
+            "nodes":        list(self._nodes.values()),
+            "edges":        list(self._edges.values()),
             "metadata": {
                 "total_steps": self._total_steps,
-                "max_depth": self._max_depth,
-                "max_g": self._max_g,
-                "max_f": self._max_f,
-                "complete": self._complete,
-                "node_count": len(self._nodes),
-                "edge_count": len(self._edges),
+                "max_depth":   self._max_depth,
+                "max_g":       self._max_g,
+                "max_f":       self._max_f,
+                "complete":    self._complete,
+                "node_count":  len(self._nodes),
+                "edge_count":  len(self._edges),
             },
         }
 
@@ -200,7 +231,6 @@ class StackTraceBuilder:
         are a silent bug — nothing breaks immediately, but over many runs
         the bus accumulates dead handlers and slows down.
         """
-        # subscribe_all uses the "*" key internally — unsubscribe with "*"
         self._bus.unsubscribe("*", self._handle_event)
 
     # ── event dispatch ─────────────────────────────────────────────────────────
@@ -209,37 +239,28 @@ class StackTraceBuilder:
         """
         Single entry point for all EventBus events.
 
-        Filters to our algorithm_id first — this is the critical gate.
-        Without this filter, a builder for "bfs" would accumulate
-        events from "astar" and produce a nonsensical mixed graph.
+        Filters to our algorithm_id first. RunController guarantees sequential
+        execution so this filter is not currently load-bearing — only one
+        builder is alive at a time and the bus only carries events from the
+        running algorithm. The filter is kept as explicit documentation: this
+        builder belongs to self._algorithm_id and only that algorithm.
 
         After filtering, dispatches by event_type using a dict table.
 
         Why dispatch table instead of if/elif?
-        Same reason as the heuristic registry: data is easier to extend
-        than code. Adding a new event type = one dict line. With if/elif
-        = editing existing logic, risking unintended side effects.
-
-        The dispatch table is rebuilt on every call. This is intentional —
-        the methods are bound at construction, so the dict creation is
-        O(1) key lookups, not closures. Python dicts are fast enough that
-        this has zero measurable overhead at our event volume.
-
-        Alternative: build the dispatch dict once in __init__ as self._dispatch.
-        Pro: marginal CPU saving.
-        Con: the dict would hold strong references to self through bound
-             methods, complicating garbage collection if you wanted to
-             pool builders. Not worth the complexity at this scale.
+        Adding a new event type = one dict line. With if/elif = editing
+        existing logic, risking unintended side effects. The dispatch table
+        also makes it immediately obvious which event types this builder
+        cares about — everything not in the table is silently ignored
+        (e.g. algorithm_start, simulation_complete).
         """
-        # Gate 1: only process events from our algorithm
         if event.get("algorithm_id") != self._algorithm_id:
             return
 
-        # Gate 2: only process events we care about
         dispatch: dict[str, Callable[[dict], None]] = {
-            "node_visit": self._on_node_visit,
-            "node_expand": self._on_node_expand,
-            "path_step": self._on_path_step,
+            "node_visit":        self._on_node_visit,
+            "node_expand":       self._on_node_expand,
+            "path_step":         self._on_path_step,
             "delivery_complete": self._on_delivery_complete,
         }
 
@@ -259,27 +280,29 @@ class StackTraceBuilder:
 
         In the 3D graph: small blue pulsing sphere.
 
-        We add the node if unseen. If already present (e.g. visited before
-        with a different parent in UCS), we do NOT overwrite — the first
-        visit establishes the node's identity. Status upgrades happen
-        only in _on_node_expand and _on_path_step.
+        We add the node if unseen. If already present (e.g. re-queued in
+        UCS/A* with a lower g), we do NOT change its status — status
+        upgrades only happen in _on_node_expand and _on_path_step.
+        The edge is always recorded via _record_edge, which appends
+        the new visit to the edge's history rather than overwriting.
         """
         node_data = event.get("node")
         if not node_data:
             return
 
         node_id = node_data["id"]
-        step = event.get("step", 0)
+        step    = event.get("step", 0)
 
         if node_id not in self._nodes:
             self._nodes[node_id] = self._build_node(node_data, step, "open")
 
         self._update_metadata(node_data, step)
 
-        # Record the directed edge that brought us here
+        # Always record the edge — _record_edge appends to history
+        # rather than overwriting, so re-queuing events are preserved
         edge_data = event.get("edge")
         if edge_data:
-            self._record_edge(edge_data)
+            self._record_edge(edge_data, step)
 
     def _on_node_expand(self, event: dict) -> None:
         """
@@ -298,11 +321,11 @@ class StackTraceBuilder:
             return
 
         node_id = node_data["id"]
-        step = event.get("step", 0)
+        step    = event.get("step", 0)
 
         if node_id in self._nodes:
             # Upgrade status: open → closed
-            # But never downgrade from path — path is the terminal status
+            # Never downgrade from path — path is the terminal status
             if self._nodes[node_id]["status"] != "path":
                 self._nodes[node_id]["status"] = "closed"
             self._nodes[node_id]["step"] = step
@@ -322,28 +345,28 @@ class StackTraceBuilder:
 
         In the 3D graph: medium green sphere, fast animated particles on edges.
 
-        Additionally, we upgrade the edge leading *into* this node to
-        edge_type="path" so it gets thick-line treatment in the renderer.
-        Walking backwards through edges to find the parent is O(edges) but
-        the path is at most 15+15=30 nodes long, so this is O(30) at worst.
+        We also mark the incoming edge for this node as "path" type.
+        _mark_incoming_edge_as_path() loops over self._edges to find edges
+        whose to_id matches this node, then sets their edge_type to "path".
+        This is O(edges) but the path is at most ~30 nodes long so the
+        total cost across all path_step calls is O(30 × edges) = O(edges).
+        Once marked as "path", the edge's history is frozen — _record_edge
+        will not append further visits to a path edge.
         """
         node_data = event.get("node")
         if not node_data:
             return
 
         node_id = node_data["id"]
-        step = event.get("step", 0)
+        step    = event.get("step", 0)
 
         if node_id in self._nodes:
             self._nodes[node_id]["status"] = "path"
         else:
             self._nodes[node_id] = self._build_node(node_data, step, "path")
 
-        # Upgrade the incoming edge for this node to "path"
-        # This makes the path visually pop out in the 3D graph
-        for (from_id, to_id), edge in self._edges.items():
-            if to_id == node_id and edge["edge_type"] != "path":
-                edge["edge_type"] = "path"
+        # Upgrade the incoming edge to "path" type
+        self._mark_incoming_edge_as_path(node_id)
 
     def _on_delivery_complete(self, event: dict) -> None:
         """
@@ -364,14 +387,12 @@ class StackTraceBuilder:
         finished_graph = self.finalize()
 
         # Publish back to bus — RunController and WS server both consume this
-        self._bus.publish(
-            {
-                "event_type": "trace_graph_ready",
-                "algorithm_id": self._algorithm_id,
-                "delivery_id": self._delivery_id,
-                "graph": finished_graph,
-            }
-        )
+        self._bus.publish({
+            "event_type":   "trace_graph_ready",
+            "algorithm_id": self._algorithm_id,
+            "delivery_id":  self._delivery_id,
+            "graph":        finished_graph,
+        })
 
         # Invoke optional callback registered by RunController
         if self._on_complete_cb:
@@ -388,46 +409,129 @@ class StackTraceBuilder:
         simulation state at any point in time.
         """
         return {
-            "id": node_data["id"],
-            "x": node_data["x"],
-            "y": node_data["y"],
+            "id":        node_data["id"],
+            "x":         node_data["x"],
+            "y":         node_data["y"],
             "cell_type": node_data["cell_type"],
-            "g": node_data["g"],
-            "h": node_data["h"],
-            "f": node_data["f"],
-            "depth": node_data["depth"],
+            "g":         node_data["g"],
+            "h":         node_data["h"],
+            "f":         node_data["f"],
+            "depth":     node_data["depth"],
             "parent_id": node_data.get("parent_id"),
-            "status": status,
-            "step": step,
+            "status":    status,
+            "step":      step,
         }
 
-    def _record_edge(self, edge_data: dict) -> None:
+    def _record_edge(self, edge_data: dict, step: int) -> None:
         """
-        Records a directed edge, respecting the priority hierarchy:
-        path > backtrack > expansion.
+        Records one traversal of a directed edge into its history.
 
-        Never downgrade a path edge — once an edge is confirmed as part
-        of the final path, it stays that way regardless of future events.
+        ── what changed from the original design ─────────────────────────
+        The original implementation used last-write-wins: the second call
+        for the same (from_id, to_id) pair silently overwrote the first.
+        This lost relaxation events — the moments where UCS or A* found a
+        cheaper path to an already-queued node and re-traversed the edge
+        with a lower cost. Those events are analytically the most interesting
+        part of understanding why A* outperforms UCS.
 
-        The edge cost is taken from the TraceEvent's edge data, which
-        reflects the actual cell traversal cost (from cell_type_registry).
-        This cost is used by the 3D graph to size particle density.
+        The new design keeps a history list. Every traversal of the edge
+        is appended regardless of whether it was seen before. The "current"
+        cost and edge_type on the edge reflect the most recent non-path
+        visit — these are what the renderer uses for particle density and
+        line style. The full history is available to the Node Inspector Panel.
+
+        ── path edges are frozen ──────────────────────────────────────────
+        Once edge_type is "path", the edge is on the final solution route.
+        No further visits are appended. This prevents a stray late-arriving
+        visit event from corrupting the path record.
+
+        ── visit_count ────────────────────────────────────────────────────
+        visit_count increments on every call, including after path marking
+        is complete — wait, no. After path marking, we return early so
+        visit_count correctly reflects only pre-path traversals. In practice
+        on this simulator, path marking happens in a dedicated path_step
+        event pass after the algorithm finishes — no new visit events arrive
+        for path edges after that point.
+
+        Parameters:
+            edge_data — the "edge" dict from a node_visit TraceEvent
+            step      — the global step counter at the time of this visit
         """
         from_id = edge_data["from_id"]
-        to_id = edge_data["to_id"]
-        key = (from_id, to_id)
+        to_id   = edge_data["to_id"]
+        key     = (from_id, to_id)
 
-        # Priority guard: never overwrite a path edge
         existing = self._edges.get(key)
+
+        # Path edges are frozen — never append further history to them.
+        # _mark_incoming_edge_as_path() sets edge_type to "path" and that
+        # is the terminal state. Any visit event arriving after path marking
+        # (which should not happen in normal operation) is silently discarded.
         if existing and existing["edge_type"] == "path":
             return
 
-        self._edges[key] = {
-            "from_id": from_id,
-            "to_id": to_id,
+        # Build this visit's history entry
+        visit_entry = {
+            "step":      step,
+            "cost":      edge_data["cost"],
             "edge_type": edge_data["edge_type"],
-            "cost": edge_data["cost"],
         }
+
+        if existing is None:
+            # First time we see this edge — create the full record
+            self._edges[key] = {
+                "from_id":     from_id,
+                "to_id":       to_id,
+                "edge_type":   edge_data["edge_type"],  # current type
+                "cost":        edge_data["cost"],        # current cost
+                "visit_count": 1,
+                "history":     [visit_entry],
+            }
+        else:
+            # Edge seen before — append to history, update current values.
+            #
+            # Why update "current" cost on each visit?
+            # In A*, re-queuing happens because a cheaper path was found.
+            # The most recent cost is the best (lowest) cost seen so far.
+            # Particle density in the 3D graph should reflect this best cost,
+            # not the original (possibly much higher) first-visit cost.
+            #
+            # Why update "current" edge_type?
+            # DFS uses "backtrack" — if DFS re-visits an edge (which it can
+            # on a cyclic path), the type is consistently "backtrack". For
+            # expansion edges, the type is always "expansion" so updating
+            # it is a no-op. There is no meaningful "downgrade" case here
+            # because we already guard against overwriting "path" above.
+            existing["cost"]        = edge_data["cost"]
+            existing["edge_type"]   = edge_data["edge_type"]
+            existing["visit_count"] += 1
+            existing["history"].append(visit_entry)
+
+    def _mark_incoming_edge_as_path(self, node_id: str) -> None:
+        """
+        Marks the edge leading into node_id as edge_type="path".
+
+        Called from _on_path_step once we know a node is on the final route.
+        The edge_type upgrade makes path edges visually dominant in the 3D
+        graph — thick line, fast green particles.
+
+        Once marked as "path", _record_edge will discard any further visits
+        to that edge (the path is final, no re-traversal is meaningful).
+
+        We do NOT freeze the history list here — the history already contains
+        all the pre-path visits, which is exactly what the inspector wants to
+        show ("this edge was relaxed twice before ending up on the path").
+
+        Why loop over all edges instead of a reverse index?
+        On a 15×15 grid there are at most ~225 edges. Looping over them once
+        per path node (at most ~30 nodes) is O(30 × 225) = O(6750) operations
+        total — negligible. A reverse index (to_id → edge key) would be an
+        optimisation only worth adding if the grid were orders of magnitude
+        larger.
+        """
+        for edge in self._edges.values():
+            if edge["to_id"] == node_id and edge["edge_type"] != "path":
+                edge["edge_type"] = "path"
 
     def _update_metadata(self, node_data: dict, step: int) -> None:
         """
@@ -442,6 +546,6 @@ class StackTraceBuilder:
         over all nodes at the end.
         """
         self._total_steps = max(self._total_steps, step)
-        self._max_depth = max(self._max_depth, node_data.get("depth", 0))
-        self._max_g = max(self._max_g, node_data.get("g", 0.0))
-        self._max_f = max(self._max_f, node_data.get("f", 0.0))
+        self._max_depth   = max(self._max_depth,   node_data.get("depth", 0))
+        self._max_g       = max(self._max_g,        node_data.get("g", 0.0))
+        self._max_f       = max(self._max_f,        node_data.get("f", 0.0))

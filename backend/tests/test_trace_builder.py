@@ -517,3 +517,175 @@ def test_multiple_builders_can_detach_independently(bus):
     assert builder_b.node_count() == 2, "builder_b must still receive its events"
 
     builder_b.detach()
+
+
+# ── edge history (new behaviour) ───────────────────────────────────────────────
+
+
+def test_edge_has_history_list(builder, bus):
+    """Every recorded edge must have a 'history' list."""
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 2.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge))
+    graph = builder.finalize()
+    assert "history" in graph["edges"][0]
+
+
+def test_edge_has_visit_count(builder, bus):
+    """Every recorded edge must have a 'visit_count' field."""
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 2.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge))
+    graph = builder.finalize()
+    assert graph["edges"][0]["visit_count"] == 1
+
+
+def test_first_visit_produces_one_history_entry(builder, bus):
+    """The first visit to an edge produces exactly one history entry."""
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 3.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=1))
+    graph = builder.finalize()
+    assert len(graph["edges"][0]["history"]) == 1
+
+
+def test_history_entry_contains_step_cost_edge_type(builder, bus):
+    """Each history entry must record step, cost, and edge_type."""
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 4.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=7))
+    graph = builder.finalize()
+    entry = graph["edges"][0]["history"][0]
+    assert entry["step"] == 7
+    assert entry["cost"] == 4.0
+    assert entry["edge_type"] == "expansion"
+
+
+def test_second_visit_appends_to_history_not_overwrites(builder, bus):
+    """
+    The second visit to the same edge must append a new history entry
+    rather than discarding the first. This is the core change from the
+    old last-write-wins behaviour.
+    """
+    edge_first  = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 5.0}
+    edge_second = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 2.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge_first,  step=1))
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge_second, step=4))
+    graph = builder.finalize()
+    edge = graph["edges"][0]
+    assert len(edge["history"]) == 2
+    assert edge["history"][0]["cost"] == 5.0
+    assert edge["history"][0]["step"] == 1
+    assert edge["history"][1]["cost"] == 2.0
+    assert edge["history"][1]["step"] == 4
+
+
+def test_visit_count_increments_on_each_visit(builder, bus):
+    """visit_count must equal the total number of times the edge was traversed."""
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 1.0}
+    for step in range(1, 5):
+        bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=step))
+    graph = builder.finalize()
+    assert graph["edges"][0]["visit_count"] == 4
+
+
+def test_current_cost_reflects_most_recent_visit(builder, bus):
+    """
+    The top-level 'cost' on the edge must reflect the most recent visit,
+    not the first. This matters for A* relaxation: the latest cost is
+    always the cheapest (best) path found so far.
+    """
+    edge_first  = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 9.0}
+    edge_second = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 3.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge_first,  step=1))
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge_second, step=2))
+    graph = builder.finalize()
+    # Current cost must be 3.0 (latest), not 9.0 (first)
+    assert graph["edges"][0]["cost"] == 3.0
+
+
+def test_history_preserved_when_edge_becomes_path(builder, bus):
+    """
+    When an edge is marked as 'path', its existing history must be preserved.
+    The inspector uses history to show "this edge was relaxed N times before
+    ending up on the final path".
+    """
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 5.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=1))
+
+    # Mark destination node as path — triggers _mark_incoming_edge_as_path
+    bus.publish(make_path_event(cell_id="1,0", x=1, y=0, step=2))
+
+    graph = builder.finalize()
+    edge_out = graph["edges"][0]
+
+    # edge_type must be upgraded to "path"
+    assert edge_out["edge_type"] == "path"
+    # but history must still be there
+    assert len(edge_out["history"]) == 1
+    assert edge_out["history"][0]["cost"] == 5.0
+
+
+def test_no_history_appended_after_path_marking(builder, bus):
+    """
+    Once an edge is marked 'path', subsequent visit events for the same
+    edge pair must NOT append to history. The path is final.
+    """
+    edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": 2.0}
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=1))
+    bus.publish(make_path_event(cell_id="1,0", x=1, y=0, step=2))
+
+    # Stray late visit — must be discarded
+    bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=3))
+
+    graph = builder.finalize()
+    edge_out = graph["edges"][0]
+    assert edge_out["edge_type"] == "path"
+    assert len(edge_out["history"]) == 1    # only the pre-path visit
+    assert edge_out["visit_count"]  == 1    # not incremented after path
+
+
+def test_multiple_relaxations_all_recorded_in_history(builder, bus):
+    """
+    Simulates A* finding progressively cheaper paths to the same node.
+    All three relaxation events must appear in history in chronological order.
+    This is the primary motivating case for the history design — without it,
+    only the last relaxation would be visible.
+    """
+    costs = [10.0, 7.0, 4.0]  # three progressively cheaper paths to "1,0"
+    for step, cost in enumerate(costs, start=1):
+        edge = {"from_id": "0,0", "to_id": "1,0", "edge_type": "expansion", "cost": cost}
+        bus.publish(make_visit_event(cell_id="1,0", x=1, y=0, edge=edge, step=step))
+
+    graph = builder.finalize()
+    edge_out = graph["edges"][0]
+
+    assert edge_out["visit_count"] == 3
+    assert len(edge_out["history"]) == 3
+    assert [e["cost"] for e in edge_out["history"]] == [10.0, 7.0, 4.0]
+    assert edge_out["cost"] == 4.0   # current = cheapest (most recent)
+
+
+def test_edge_schema_shape_includes_all_new_fields(builder, bus):
+    """
+    Every edge in the finalized graph must have all required fields:
+    from_id, to_id, edge_type, cost, visit_count, history.
+    Missing fields would silently break the 3D renderer and inspector.
+    """
+    edge = {"from_id": "3,3", "to_id": "4,3", "edge_type": "expansion", "cost": 1.0}
+    bus.publish(make_visit_event(cell_id="4,3", x=4, y=3, edge=edge))
+    graph = builder.finalize()
+    e = graph["edges"][0]
+    required = {"from_id", "to_id", "edge_type", "cost", "visit_count", "history"}
+    assert required.issubset(e.keys())
+
+
+def test_backtrack_edge_history_records_correctly(builder, bus):
+    """
+    DFS uses 'backtrack' edge type. The history mechanism must work
+    identically for backtrack edges as for expansion edges.
+    """
+    edge = {"from_id": "5,5", "to_id": "6,5", "edge_type": "backtrack", "cost": 3.0}
+    bus.publish(make_visit_event(
+        algo_id="astar", cell_id="6,5", x=6, y=5, edge=edge, step=1
+    ))
+    graph = builder.finalize()
+    e = graph["edges"][0]
+    assert e["edge_type"] == "backtrack"
+    assert e["history"][0]["edge_type"] == "backtrack"
