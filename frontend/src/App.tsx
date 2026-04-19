@@ -1,72 +1,86 @@
 // src/App.tsx
-//
-// Application shell. Responsibilities:
-//   1. Mount the WebSocket hook (runs for the app's lifetime)
-//   2. Provide the top-level layout frame
-//   3. Route between the three main views (grid / graph / metrics)
-//
-// This file stays thin. All layout and logic lives in child components.
+// Application shell — mounts WebSocket, hosts layout, routes three main views.
+// Left sidebar: profile controls + algorithm toggles + run button.
+// Main area: one of [ GridView | GraphView | MetricsView ] depending on activeView.
 
-import { useWebSocket } from "@/hooks";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import { useConnected, useRunStatus, useActiveView, useStore } from "@/store";
 import type { ActiveView } from "@/types";
-import { ALGORITHM_SHORT } from "@/lib/constants";
+import { ProfilePanel }   from "@/components/controls/ProfilePanel";
+import { GridView }       from "@/components/grid/GridView";
+import { GraphView }      from "@/components/graph/GraphView";
+import { MetricsView }    from "@/components/metrics/MetricsView";
+import { PlaybackBar }    from "@/components/controls/PlaybackBar";
+import { StatusBar }      from "@/components/shared/StatusBar";
 
 export default function App() {
-  // Mount the WebSocket connection for the app's lifetime
   useWebSocket();
 
-  const connected    = useConnected();
-  const runStatus    = useRunStatus();
-  const activeView   = useActiveView();
-  const setView      = useStore((s) => s.setActiveView);
+  const connected  = useConnected();
+  const runStatus  = useRunStatus();
+  const activeView = useActiveView();
+  const setView    = useStore((s) => s.setActiveView);
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "var(--bg-base)" }}>
-
-      {/* ── top navigation bar ─────────────────────────────────────────── */}
-      <header style={{
-        background:   "var(--bg-surface)",
-        borderBottom: "1px solid var(--border-subtle)",
-        padding:      "0 var(--space-6)",
-        height:       "48px",
-        display:      "flex",
-        alignItems:   "center",
-        gap:          "var(--space-6)",
-        flexShrink:   0,
-      }}>
+    <div
+      style={{
+        display:       "flex",
+        flexDirection: "column",
+        height:        "100vh",
+        overflow:      "hidden",
+        background:    "var(--bg-base)",
+        fontFamily:    "var(--font-sans)",
+      }}
+    >
+      {/* ── top navigation ─────────────────────────────────────────────── */}
+      <header
+        style={{
+          display:        "flex",
+          alignItems:     "center",
+          height:         "48px",
+          padding:        "0 20px",
+          flexShrink:     0,
+          background:     "var(--bg-surface)",
+          borderBottom:   "1px solid var(--border-subtle)",
+          gap:            "16px",
+          zIndex:         100,
+        }}
+      >
         {/* Brand */}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <span style={{ fontSize: "16px" }}>🤖</span>
-          <span style={{
-            color:      "var(--text-primary)",
-            fontWeight: 500,
-            fontSize:   "14px",
-            letterSpacing: "0.01em",
-          }}>
-            Urban Delivery Robot
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="9" stroke="var(--accent-teal)" strokeWidth="1.5"/>
+            <circle cx="10" cy="10" r="4" fill="var(--accent-teal)" opacity="0.6"/>
+            <line x1="10" y1="1" x2="10" y2="4" stroke="var(--accent-teal)" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="10" y1="16" x2="10" y2="19" stroke="var(--accent-teal)" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="1" y1="10" x2="4" y2="10" stroke="var(--accent-teal)" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="16" y1="10" x2="19" y2="10" stroke="var(--accent-teal)" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: "13px", letterSpacing: "0.02em" }}>
+            Positron
           </span>
-          <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
-            AI Search Simulator
+          <span style={{ color: "var(--text-muted)", fontSize: "11px", fontWeight: 400 }}>
+            Urban Delivery Simulator
           </span>
         </div>
 
-        {/* View switcher */}
-        <nav style={{ display: "flex", gap: "var(--space-1)", marginLeft: "auto" }}>
+        {/* View tabs */}
+        <nav style={{ display: "flex", gap: "2px", marginLeft: "auto" }}>
           {(["grid", "graph", "metrics"] as ActiveView[]).map((view) => (
             <button
               key={view}
               onClick={() => setView(view)}
               style={{
-                padding:      "4px 12px",
-                borderRadius: "var(--radius-md)",
-                border:       "none",
-                cursor:       "pointer",
-                fontSize:     "13px",
-                fontWeight:   activeView === view ? 500 : 400,
-                background:   activeView === view ? "var(--bg-raised)" : "transparent",
-                color:        activeView === view ? "var(--text-primary)" : "var(--text-secondary)",
-                transition:   "all var(--duration-fast)",
+                padding:       "5px 14px",
+                borderRadius:  "6px",
+                border:        "none",
+                cursor:        "pointer",
+                fontSize:      "12px",
+                fontWeight:    activeView === view ? 500 : 400,
+                background:    activeView === view ? "var(--bg-raised)" : "transparent",
+                color:         activeView === view ? "var(--text-primary)" : "var(--text-secondary)",
+                transition:    "all 120ms ease",
+                letterSpacing: "0.01em",
               }}
             >
               {view === "grid" ? "2D Grid" : view === "graph" ? "3D Graph" : "Metrics"}
@@ -75,78 +89,82 @@ export default function App() {
         </nav>
 
         {/* Status indicators */}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
-          {/* Run status */}
-          {runStatus !== "idle" && (
-            <span style={{
-              fontSize: "11px",
-              color: runStatus === "complete" ? "var(--accent-green)"
-                   : runStatus === "failed"   ? "var(--accent-red)"
-                   : "var(--accent-amber)",
-            }}>
-              {runStatus === "running" ? "● Running" :
-               runStatus === "complete" ? "✓ Complete" :
-               runStatus === "failed"   ? "✗ Failed" : ""}
-            </span>
-          )}
-
-          {/* WebSocket connection dot */}
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-            <div style={{
-              width:        "6px",
-              height:       "6px",
-              borderRadius: "50%",
-              background:   connected ? "var(--accent-green)" : "var(--accent-red)",
-            }} />
-            <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
-              {connected ? "Live" : "Offline"}
-            </span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <RunStatusChip status={runStatus} />
+          <ConnectionDot connected={connected} />
         </div>
       </header>
 
-      {/* ── main content area ───────────────────────────────────────────── */}
-      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+      {/* ── workspace ──────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Left sidebar — profile + algorithm controls */}
+        <aside
+          style={{
+            width:        "260px",
+            flexShrink:   0,
+            background:   "var(--bg-surface)",
+            borderRight:  "1px solid var(--border-subtle)",
+            display:      "flex",
+            flexDirection:"column",
+            overflow:     "hidden",
+          }}
+        >
+          <ProfilePanel />
+        </aside>
 
-        {/* Placeholder content — components get built in the next phase */}
-        <div style={{
-          flex:           1,
-          display:        "flex",
-          alignItems:     "center",
-          justifyContent: "center",
-          flexDirection:  "column",
-          gap:            "var(--space-4)",
-          color:          "var(--text-muted)",
-        }}>
-          <div style={{ fontSize: "48px" }}>
-            {activeView === "grid" ? "⬛" : activeView === "graph" ? "🕸️" : "📊"}
-          </div>
-          <div style={{ fontSize: "14px" }}>
-            {activeView === "grid"    ? "2D Grid Viewer"    :
-             activeView === "graph"   ? "3D Node Graph"     :
-                                        "Metrics Dashboard"}
-          </div>
-          <div style={{ fontSize: "12px" }}>
-            Components build next →
+        {/* Main content */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            {activeView === "grid"    && <GridView />}
+            {activeView === "graph"   && <GraphView />}
+            {activeView === "metrics" && <MetricsView />}
           </div>
 
-          {/* Connection state feedback */}
-          {!connected && (
-            <div style={{
-              marginTop:    "var(--space-4)",
-              padding:      "var(--space-3) var(--space-4)",
-              borderRadius: "var(--radius-lg)",
-              background:   "var(--bg-raised)",
-              border:       "1px solid var(--border-default)",
-              fontSize:     "12px",
-              color:        "var(--accent-amber)",
-            }}>
-              ⚠ Backend not connected — start the FastAPI server on port 8000
-            </div>
-          )}
+          {/* Playback bar — always visible at bottom */}
+          <PlaybackBar />
         </div>
+      </div>
 
-      </main>
+      {/* Status bar — lowest tier */}
+      <StatusBar />
+    </div>
+  );
+}
+
+// ── small inline status chips ────────────────────────────────────────────────
+
+function RunStatusChip({ status }: { status: string }) {
+  if (status === "idle") return null;
+  const cfg: Record<string, { color: string; label: string }> = {
+    running:  { color: "var(--accent-amber)", label: "● Running" },
+    complete: { color: "var(--accent-green)", label: "✓ Complete" },
+    failed:   { color: "var(--accent-red)",   label: "✗ Failed" },
+    pending:  { color: "var(--text-muted)",   label: "○ Pending" },
+  };
+  const c = cfg[status] ?? cfg.pending;
+  return (
+    <span style={{ fontSize: "11px", color: c.color, fontWeight: 500 }}>
+      {c.label}
+    </span>
+  );
+}
+
+function ConnectionDot({ connected }: { connected: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+      <div
+        style={{
+          width:        "6px",
+          height:       "6px",
+          borderRadius: "50%",
+          background:   connected ? "var(--accent-green)" : "var(--accent-red)",
+          boxShadow:    connected ? "0 0 6px var(--accent-green)" : "none",
+          transition:   "all 300ms",
+        }}
+      />
+      <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
+        {connected ? "Live" : "Offline"}
+      </span>
     </div>
   );
 }
