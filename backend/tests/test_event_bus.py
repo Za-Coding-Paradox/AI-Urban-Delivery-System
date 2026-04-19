@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from engine.event_bus import EventBus
+from backend.engine.event_bus import EventBus
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
