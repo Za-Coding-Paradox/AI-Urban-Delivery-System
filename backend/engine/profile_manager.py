@@ -9,25 +9,20 @@ from typing import Optional
 
 import jsonschema
 
+from common.constants import (
+    GRID_HEIGHT,
+    GRID_WIDTH,
+    MAX_OBSTACLE_FRACTION,
+    MIN_OBSTACLE_FRACTION,
+    SCHEMA_VERSION,
+    TRAFFIC_ZONE_FRACTION,
+)
 from engine.grid_builder import GridBuilder, GridBuilderError
 
 # ── paths ──────────────────────────────────────────────────────────────────────
 PROFILES_DIR = Path(__file__).parent.parent / "profiles"
 SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 PROFILE_SCHEMA = SCHEMAS_DIR / "city_profile.schema.json"
-
-# ── constants ──────────────────────────────────────────────────────────────────
-GRID_WIDTH = 15
-GRID_HEIGHT = 15
-SCHEMA_VERSION = "1.0"
-
-# Obstacle density range — what fraction of the grid can be obstacles
-# Too many obstacles risks making the grid unsolvable
-MIN_OBSTACLE_FRACTION = 0.05  # at least  5% obstacles
-MAX_OBSTACLE_FRACTION = 0.20  # at most  20% obstacles
-
-# Traffic zone density — fraction of road cells that become traffic zones
-TRAFFIC_ZONE_FRACTION = 0.15  # 15% of passable cells become traffic zones
 
 
 class ProfileManagerError(Exception):
