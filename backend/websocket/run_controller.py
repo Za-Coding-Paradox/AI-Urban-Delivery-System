@@ -291,7 +291,7 @@ class RunController:
         goal_key  = "{x},{y}".format(**delivery)
 
         start_cell = cell_map[start_key]
-        goal_cell  = cell_map[goal_key]
+        goal_cell = {**cell_map[goal_key], "delivery_id": delivery_id}
 
         self._emit_progress("delivery_start", {
             "run_id":      self._run_id,

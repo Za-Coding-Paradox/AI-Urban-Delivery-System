@@ -74,7 +74,7 @@ class BaseRunner(ABC):
         # It is used on every emitted event so the frontend can bucket events
         # by (algorithm_id, delivery_id) for per-pair playback.
         # Fall back to the cell id string if label is missing (should never happen).
-        delivery_id: str = goal.get("label") or goal.get("id", "")
+        delivery_id: str = goal.get("delivery_id", "")
 
         # Build a fast lookup dict: "x,y" → cell
         # O(1) access instead of scanning 225 cells every time
