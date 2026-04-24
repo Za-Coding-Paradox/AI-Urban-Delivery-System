@@ -61,22 +61,23 @@ export function PlaybackBar() {
   // Auto-advance timer — reads live cursor/total via getState() to avoid
   // stale closure. The interval recreates only when playing/speed change.
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!playing || total === 0) return;
+	  if (intervalRef.current) clearInterval(intervalRef.current);
+	  if (!playing) return;   // ← only guard on playing, not total
 
-    const delay = PLAYBACK_STEP_MS / speed;
-    intervalRef.current = setInterval(() => {
-      const { playback: pb } = store.getState();
-      if (pb.cursor >= pb.total - 1) {
-        store.setPlaybackPlaying(false);
-        if (intervalRef.current) clearInterval(intervalRef.current);
-      } else {
-        store.stepForward();
-      }
-    }, delay);
+	  const delay = PLAYBACK_STEP_MS / speed;
+	  intervalRef.current = setInterval(() => {
+		  const { playback: pb } = store.getState();
+		  if (pb.total === 0) return;  // ← check live total inside the callback instead
+		  if (pb.cursor >= pb.total - 1) {
+			  store.setPlaybackPlaying(false);
+			  if (intervalRef.current) clearInterval(intervalRef.current);
+		  } else {
+			  store.stepForward();
+		  }
+	  }, delay);
 
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [playing, speed, total]);
+	  return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [playing, speed]);  // ← total removed
 
   // Don't render when no events
   if (total === 0 && runStatus === "idle") return null;
