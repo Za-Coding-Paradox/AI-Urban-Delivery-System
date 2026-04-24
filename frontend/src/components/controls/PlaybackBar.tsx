@@ -14,8 +14,14 @@ import { PLAYBACK_STEP_MS } from "@/lib/constants";
 export function PlaybackBar() {
   const playback    = usePlayback();
   const runStatus   = useRunStatus();
-  const store       = useStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // useStore (the Zustand store function) has .getState() for imperative reads in callbacks.
+  // Individual actions are pulled via the hook so they are stable references.
+  const setPlaying   = useStore((s) => s.setPlaybackPlaying);
+  const setSpeed     = useStore((s) => s.setPlaybackSpeed);
+  const setCursor    = useStore((s) => s.setPlaybackCursor);
+  const stepForward  = useStore((s) => s.stepForward);
+  const stepBack     = useStore((s) => s.stepBack);
 
   const activeAlgo     = useActiveAlgorithm();
   const activeDelivery = useActiveDelivery();
@@ -24,11 +30,10 @@ export function PlaybackBar() {
   const flatEvents = useStore((s) => s.events);
   const segmentKey = `${activeAlgo}:${activeDelivery}`;
 
-  // Compute the index in the flat buffer of the last event for this segment.
-  // This becomes the scrub-bar's max value so the track fills exactly when
-  // all segment events have been played.
-  const segmentTotal = useMemo(() => {
-    let count = 0;
+  // Build a lookup array: segmentFlatIndices[n] = flat index of the n-th segment event.
+  // This is the single source of truth for translating between segment space and flat space.
+  const segmentFlatIndices = useMemo(() => {
+    const indices: number[] = [];
     for (let i = 0; i < flatEvents.length; i++) {
       const ev = flatEvents[i] as any;
       if (
@@ -36,48 +41,48 @@ export function PlaybackBar() {
         typeof ev.algorithm_id === "string" &&
         typeof ev.delivery_id  === "string" &&
         `${ev.algorithm_id}:${ev.delivery_id}` === segmentKey
-      ) count++;
+      ) indices.push(i);
     }
-    return count;
+    return indices;
   }, [flatEvents, segmentKey]);
 
-  // How many segment events have been consumed up to the current cursor
+  const segmentTotal = segmentFlatIndices.length;
+
+  // How many segment events have been consumed up to the current flat cursor.
+  // Binary-search the indices array for efficiency.
   const segmentCursor = useMemo(() => {
-    let count = 0;
-    for (let i = 0; i <= playback.cursor && i < flatEvents.length; i++) {
-      const ev = flatEvents[i] as any;
-      if (
-        ev &&
-        typeof ev.algorithm_id === "string" &&
-        typeof ev.delivery_id  === "string" &&
-        `${ev.algorithm_id}:${ev.delivery_id}` === segmentKey
-      ) count++;
+    let lo = 0, hi = segmentFlatIndices.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (segmentFlatIndices[mid] <= playback.cursor) lo = mid + 1;
+      else hi = mid;
     }
-    return count;
-  }, [flatEvents, playback.cursor, segmentKey]);
+    return lo; // number of segment events at or before playback.cursor
+  }, [segmentFlatIndices, playback.cursor]);
 
   const { cursor, total, playing, speed } = playback;
 
-  // Auto-advance timer — reads live cursor/total via getState() to avoid
-  // stale closure. The interval recreates only when playing/speed change.
+  // Auto-advance timer — reads live state via store.getState() on every tick.
+  // Only recreates when playing or speed changes — no stale closure on total.
   useEffect(() => {
-	  if (intervalRef.current) clearInterval(intervalRef.current);
-	  if (!playing) return;   // ← only guard on playing, not total
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (!playing) return;
 
-	  const delay = PLAYBACK_STEP_MS / speed;
-	  intervalRef.current = setInterval(() => {
-		  const { playback: pb } = store.getState();
-		  if (pb.total === 0) return;  // ← check live total inside the callback instead
-		  if (pb.cursor >= pb.total - 1) {
-			  store.setPlaybackPlaying(false);
-			  if (intervalRef.current) clearInterval(intervalRef.current);
-		  } else {
-			  store.stepForward();
-		  }
-	  }, delay);
+    const delay = PLAYBACK_STEP_MS / speed;
+    intervalRef.current = setInterval(() => {
+      const { playback: pb } = useStore.getState();
+      if (pb.total === 0) return;
+      if (!pb.playing) { clearInterval(intervalRef.current!); return; }
+      if (pb.cursor >= pb.total - 1) {
+        useStore.getState().setPlaybackPlaying(false);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      } else {
+        useStore.getState().stepForward();
+      }
+    }, delay);
 
-	  return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [playing, speed]);  // ← total removed
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [playing, speed]);
 
   // Don't render when no events
   if (total === 0 && runStatus === "idle") return null;
@@ -100,7 +105,7 @@ export function PlaybackBar() {
     >
       {/* Play / Pause */}
       <button
-        onClick={() => store.setPlaybackPlaying(!playing)}
+        onClick={() => setPlaying(!playing)}
         disabled={total === 0}
         style={iconBtnStyle}
         title={playing ? "Pause" : "Play"}
@@ -118,7 +123,7 @@ export function PlaybackBar() {
       </button>
 
       {/* Step back */}
-      <button onClick={() => store.stepBack()} disabled={cursor === 0} style={iconBtnStyle} title="Step back">
+      <button onClick={() => stepBack()} disabled={cursor === 0} style={iconBtnStyle} title="Step back">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M9 2L3 6L9 10V2Z" fill="currentColor"/>
           <rect x="1" y="2" width="2" height="8" rx="1" fill="currentColor"/>
@@ -126,7 +131,7 @@ export function PlaybackBar() {
       </button>
 
       {/* Step forward */}
-      <button onClick={() => store.stepForward()} disabled={cursor >= total - 1} style={iconBtnStyle} title="Step forward">
+      <button onClick={() => stepForward()} disabled={cursor >= total - 1} style={iconBtnStyle} title="Step forward">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 2L9 6L3 10V2Z" fill="currentColor"/>
           <rect x="9" y="2" width="2" height="8" rx="1" fill="currentColor"/>
@@ -157,15 +162,20 @@ export function PlaybackBar() {
             transition:   playing ? "width 80ms linear" : "none",
           }}
         />
-        {/* Input */}
+        {/* Input — operates in segment space so thumb position matches fill */}
         <input
           type="range"
           min={0}
-          max={Math.max(total - 1, 1)}
-          value={cursor}
+          max={Math.max(segmentTotal - 1, 1)}
+          value={segmentCursor}
           onChange={(e) => {
-            store.setPlaybackPlaying(false);
-            store.setPlaybackCursor(Number(e.target.value));
+            setPlaying(false);
+            const segIdx = Number(e.target.value);
+            // Translate segment position to flat index.
+            // segIdx 0 means before any segment event, so flat cursor stays 0.
+            // Otherwise jump to the flat index of the (segIdx-1)th segment event.
+            const flatIdx = segIdx === 0 ? 0 : (segmentFlatIndices[segIdx - 1] ?? 0);
+            setCursor(flatIdx);
           }}
           style={{
             position:   "absolute",
@@ -199,7 +209,7 @@ export function PlaybackBar() {
         {[0.5, 1, 2, 5].map((s) => (
           <button
             key={s}
-            onClick={() => store.setPlaybackSpeed(s as any)}
+            onClick={() => setSpeed(s as any)}
             style={{
               padding:      "2px 6px",
               borderRadius: "3px",
@@ -249,5 +259,3 @@ const iconBtnStyle: React.CSSProperties = {
   flexShrink:   0,
   transition:   "all 120ms",
 };
-
-
