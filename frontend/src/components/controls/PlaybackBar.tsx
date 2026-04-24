@@ -62,16 +62,16 @@ export function PlaybackBar() {
 
   const { cursor, total, playing, speed } = playback;
 
-  // Auto-advance timer — reads live state via store.getState() on every tick.
-  // Only recreates when playing or speed changes — no stale closure on total.
+  // Auto-advance timer. Depends on [playing, speed, total] so it re-fires
+  // when the first events arrive (total: 0 -> N) while playing is already true.
+  // All internal reads use useStore.getState() to avoid stale closures.
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!playing) return;
+    if (!playing || total === 0) return;
 
     const delay = PLAYBACK_STEP_MS / speed;
     intervalRef.current = setInterval(() => {
       const { playback: pb } = useStore.getState();
-      if (pb.total === 0) return;
       if (!pb.playing) { clearInterval(intervalRef.current!); return; }
       if (pb.cursor >= pb.total - 1) {
         useStore.getState().setPlaybackPlaying(false);
@@ -82,7 +82,7 @@ export function PlaybackBar() {
     }, delay);
 
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [playing, speed]);
+  }, [playing, speed, total]);  // total here is intentional — re-fires when events first arrive
 
   // Don't render when no events
   if (total === 0 && runStatus === "idle") return null;
@@ -105,7 +105,17 @@ export function PlaybackBar() {
     >
       {/* Play / Pause */}
       <button
-        onClick={() => setPlaying(!playing)}
+        onClick={() => {
+          const nowPlaying = !playing;
+          // If starting playback from the very beginning (cursor at 0 with no segment
+          // events consumed yet), jump the flat cursor to the first event of the active
+          // segment so the grid starts moving immediately instead of burning through
+          // invisible lifecycle events (algorithm_start, grid_built, etc.).
+          if (nowPlaying && segmentCursor === 0 && segmentFlatIndices.length > 0) {
+            setCursor(segmentFlatIndices[0]);
+          }
+          setPlaying(nowPlaying);
+        }}
         disabled={total === 0}
         style={iconBtnStyle}
         title={playing ? "Pause" : "Play"}
